@@ -8,13 +8,54 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-// Hosted tee mockup; swap to /public later if you want
-const TEE_URL = "/tee.png";
-
+/** ---------------- PRICING (demo, unchanged) ---------------- */
 const COLORS: Color[] = ["white", "black", "heather"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
 
+const BASE_PRICE_MATERIAL: Record<Material, number> = {
+  standard: 12,
+  eco: 14,
+  premium: 18,
+};
+const COLOR_SURCHARGE: Record<Color, number> = {
+  white: 0,
+  black: 1,     // pretreatment on dark garments
+  heather: 0.5, // special blend
+};
+const SIZE_SURCHARGE: Record<string, number> = {
+  XS: 0,
+  S: 0,
+  M: 0,
+  L: 0,
+  XL: 1.5,
+  XXL: 2.5,
+};
+
+const gbp = new Intl.NumberFormat("en-GB", {
+  style: "currency",
+  currency: "GBP",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** ---------------- MOCKUP PNG MAP (edit paths if you use different names) ---------------- */
+const TEE_MAP: Record<Side, Record<Color, string>> = {
+  front: {
+    white: "/mockups/tee_white_front.png",
+    black: "/mockups/tee_black_front.png",
+    heather: "/mockups/tee_heather_front.png",
+  },
+  back: {
+    white: "/mockups/tee_white_back.png",
+    black: "/mockups/tee_black_back.png",
+    heather: "/mockups/tee_heather_back.png",
+  },
+};
+// Fallback if a specific file is missing — keep a generic tee here if you want
+const TEE_FALLBACK = "/tee.png";
+
+/** ---------------- PAGE ---------------- */
 export default function EditPage() {
   const router = useRouter();
   const {
@@ -29,11 +70,12 @@ export default function EditPage() {
     setMaterial,
   } = useDesignStore();
 
+  // redirect back if no selected image
   useEffect(() => {
     if (!chosenImage) router.replace("/generate");
   }, [chosenImage, router]);
 
-  // editor state
+  // editor state (unchanged)
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scalePct, setScalePct] = useState(60);
   const [rotationDeg, setRotationDeg] = useState(0);
@@ -42,13 +84,15 @@ export default function EditPage() {
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef({ active: false, dx: 0, dy: 0 });
 
+  // quantity for pricing
+  const [qty, setQty] = useState<number>(1);
+
   // helpers
   const containerW = containerRef.current?.clientWidth ?? 0;
   const containerH = containerRef.current?.clientHeight ?? 0;
 
   const safeRect = useMemo(() => {
-    const w = containerW,
-      h = containerH;
+    const w = containerW, h = containerH;
     return {
       x: 0.5 * w - 0.65 * w * 0.5,
       y: 0.34 * h - 0.45 * h * 0.5,
@@ -123,6 +167,24 @@ export default function EditPage() {
     drag.current.active = false;
   };
 
+  // ------- PRICING (unchanged) -------
+  const unitPrice = useMemo(() => {
+    const base = BASE_PRICE_MATERIAL[material] ?? 12;
+    const colorFee = COLOR_SURCHARGE[color] ?? 0;
+    const sizeFee = SIZE_SURCHARGE[size] ?? 0;
+    return Math.max(0, base + colorFee + sizeFee);
+  }, [material, color, size]);
+
+  const totalPrice = useMemo(
+    () => +(unitPrice * Math.max(1, qty)).toFixed(2),
+    [unitPrice, qty]
+  );
+
+  // --------- PICK MOCKUP PNG BY SIDE + COLOR ----------
+  const teeSrc = useMemo(() => {
+    return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
+  }, [side, color]);
+
   if (!chosenImage) {
     return (
       <>
@@ -149,13 +211,13 @@ export default function EditPage() {
             ref={containerRef}
             className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white"
           >
-            {/* Shirt mockup */}
+            {/* >>> Mockup PNG that reacts to side + color <<< */}
             <img
-              src={TEE_URL}
-              alt={`T-shirt mockup (${side})`}
+              src={teeSrc}
+              alt={`T-shirt mockup (${color} ${side})`}
               draggable={false}
               onDragStart={(e) => e.preventDefault()}
-              className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none [-webkit-user-drag:none]"
+              className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none"
             />
 
             {/* Safe area */}
@@ -175,7 +237,7 @@ export default function EditPage() {
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
-              className="absolute cursor-move select-none pointer-events-auto [-webkit-user-drag:none]"
+              className="absolute cursor-move select-none pointer-events-auto"
               style={{
                 left: `${pos.x}px`,
                 top: `${pos.y}px`,
@@ -251,7 +313,7 @@ export default function EditPage() {
                     key={s}
                     onClick={() => setSide(s)}
                     className={`rounded-lg px-3 py-2 text-sm transition ${
-                      side === s
+                      s === side
                         ? "bg-black text-white"
                         : "border bg-white hover:bg-zinc-50"
                     }`}
@@ -279,7 +341,7 @@ export default function EditPage() {
                       className="inline-block h-4 w-4 rounded-full border"
                       style={{
                         background:
-                          c === "white" ? "#fff" : c === "black" ? "#111" : "#d1d5db",
+                          c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
                         borderColor: c === "white" ? "#e5e7eb" : "transparent",
                       }}
                     />
@@ -328,6 +390,52 @@ export default function EditPage() {
                 ))}
               </div>
             </div>
+
+            {/* Quantity */}
+            <div className="flex items-center gap-3">
+              <span className="w-20 text-sm text-zinc-600">Quantity</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                >
+                  −
+                </Button>
+                <span className="w-10 text-center tabular-nums">{qty}</span>
+                <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
+                  +
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing summary (unchanged) */}
+          <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
+            <div className="flex items-center justify-between text-sm">
+              <span>Base ({material})</span>
+              <span>{gbp.format(BASE_PRICE_MATERIAL[material])}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span>Colour adj. ({color})</span>
+              <span>{gbp.format(COLOR_SURCHARGE[color])}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span>Size adj. ({size})</span>
+              <span>{gbp.format(SIZE_SURCHARGE[size] ?? 0)}</span>
+            </div>
+            <div className="my-3 h-px w-full bg-zinc-200" />
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-600">Unit price</span>
+              <span className="font-semibold">{gbp.format(unitPrice)}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-sm text-zinc-600">Quantity</span>
+              <span className="tabular-nums">{qty}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-lg font-semibold">
+              <span>Total</span>
+              <span>{gbp.format(totalPrice)}</span>
+            </div>
           </div>
 
           {/* Footer actions */}
@@ -349,7 +457,19 @@ export default function EditPage() {
               </Button>
               <Button
                 className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
-                onClick={() => alert("Proceed to payment (demo).")}
+                onClick={() => {
+                  alert(
+                    [
+                      `Side: ${side}`,
+                      `Color: ${color}`,
+                      `Size: ${size}`,
+                      `Material: ${material}`,
+                      `Qty: ${qty}`,
+                      `Unit: ${gbp.format(unitPrice)}`,
+                      `Total: ${gbp.format(totalPrice)}`,
+                    ].join("\n")
+                  );
+                }}
               >
                 Proceed to payment →
               </Button>
