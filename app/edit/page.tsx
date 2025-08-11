@@ -8,7 +8,7 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-/** ---------------- PRICING (demo, unchanged) ---------------- */
+/** ---------- Pricing (unchanged) ---------- */
 const COLORS: Color[] = ["white", "black", "heather"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
@@ -20,8 +20,8 @@ const BASE_PRICE_MATERIAL: Record<Material, number> = {
 };
 const COLOR_SURCHARGE: Record<Color, number> = {
   white: 0,
-  black: 1,     // pretreatment on dark garments
-  heather: 0.5, // special blend
+  black: 1,
+  heather: 0.5,
 };
 const SIZE_SURCHARGE: Record<string, number> = {
   XS: 0,
@@ -31,7 +31,6 @@ const SIZE_SURCHARGE: Record<string, number> = {
   XL: 1.5,
   XXL: 2.5,
 };
-
 const gbp = new Intl.NumberFormat("en-GB", {
   style: "currency",
   currency: "GBP",
@@ -39,7 +38,7 @@ const gbp = new Intl.NumberFormat("en-GB", {
   maximumFractionDigits: 2,
 });
 
-/** ---------------- MOCKUP PNG MAP (edit paths if you use different names) ---------------- */
+/** ---------- Mockup PNG map (side + color) ---------- */
 const TEE_MAP: Record<Side, Record<Color, string>> = {
   front: {
     white: "/mockups/tee_white_front.png",
@@ -52,10 +51,14 @@ const TEE_MAP: Record<Side, Record<Color, string>> = {
     heather: "/mockups/tee_heather_back.png",
   },
 };
-// Fallback if a specific file is missing — keep a generic tee here if you want
 const TEE_FALLBACK = "/tee.png";
 
-/** ---------------- PAGE ---------------- */
+/** ---------- Helpers ---------- */
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const deg = (rad: number) => (rad * 180) / Math.PI;
+
+type GestureMode = "none" | "drag" | "scale" | "rotate" | "pinch";
+
 export default function EditPage() {
   const router = useRouter();
   const {
@@ -70,29 +73,42 @@ export default function EditPage() {
     setMaterial,
   } = useDesignStore();
 
-  // redirect back if no selected image
   useEffect(() => {
     if (!chosenImage) router.replace("/generate");
   }, [chosenImage, router]);
 
-  // editor state (unchanged)
+  /** ---------- Editor state ---------- */
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scalePct, setScalePct] = useState(60);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [opacity, setOpacity] = useState(100);
   const [imgRatio, setImgRatio] = useState(1);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const drag = useRef({ active: false, dx: 0, dy: 0 });
+  const [pos, setPos] = useState({ x: 0, y: 0 }); // center in container px
+
+  // gesture bookkeeping
+  const modeRef = useRef<GestureMode>("none");
+  const gesture = useRef({
+    startX: 0,
+    startY: 0,
+    startScale: 60,
+    startRotation: 0,
+    startDist: 0,
+    startAngle: 0,
+  });
+
+  // track pointers for pinch
+  const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   // quantity for pricing
   const [qty, setQty] = useState<number>(1);
 
-  // helpers
+  /** ---------- Geometry ---------- */
   const containerW = containerRef.current?.clientWidth ?? 0;
   const containerH = containerRef.current?.clientHeight ?? 0;
 
   const safeRect = useMemo(() => {
-    const w = containerW, h = containerH;
+    const w = containerW,
+      h = containerH;
     return {
       x: 0.5 * w - 0.65 * w * 0.5,
       y: 0.34 * h - 0.45 * h * 0.5,
@@ -123,13 +139,12 @@ export default function EditPage() {
       return { x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 };
     }
     return {
-      x: Math.max(minX, Math.min(maxX, x)),
-      y: Math.max(minY, Math.min(maxY, y)),
+      x: clamp(x, minX, maxX),
+      y: clamp(y, minY, maxY),
     };
   };
 
   const centerDesign = () => {
-    if (!containerRef.current) return;
     setPos({ x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 });
   };
 
@@ -146,28 +161,123 @@ export default function EditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designWidthPx, designHeightPx]);
 
-  // drag handlers (prevent native image drag)
-  const onPointerDown = (e: React.PointerEvent) => {
+  /** ---------- Mockup selection ---------- */
+  const teeSrc = useMemo(() => {
+    return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
+  }, [side, color]);
+
+  /** ---------- Pointer utilities ---------- */
+  const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
+    const rect = containerRef.current!.getBoundingClientRect();
+    return { x: (e as PointerEvent).clientX - rect.left, y: (e as PointerEvent).clientY - rect.top };
+  };
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+  const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
+    Math.atan2(to.y - from.y, to.x - from.x);
+
+  /** ---------- Drag (move) on image ---------- */
+  const onDesignPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    if (!containerRef.current) return;
-    drag.current.active = true;
     (e.target as Element).setPointerCapture(e.pointerId);
-    const rect = containerRef.current.getBoundingClientRect();
-    drag.current.dx = e.clientX - rect.left - pos.x;
-    drag.current.dy = e.clientY - rect.top - pos.y;
+    modeRef.current = "drag";
+    const p = getLocalXY(e);
+    gesture.current.startX = p.x - pos.x;
+    gesture.current.startY = p.y - pos.y;
+
+    // track pointer for pinch if a second finger arrives
+    pointers.current.set(e.pointerId, p);
   };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current.active || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left - drag.current.dx;
-    const y = e.clientY - rect.top - drag.current.dy;
-    setPos(clampCenterToSafe(x, y));
+  const onDesignPointerMove = (e: React.PointerEvent) => {
+    // update tracked pointer
+    if (pointers.current.has(e.pointerId)) {
+      pointers.current.set(e.pointerId, getLocalXY(e));
+    }
+
+    if (modeRef.current === "drag") {
+      const p = getLocalXY(e);
+      setPos(clampCenterToSafe(p.x - gesture.current.startX, p.y - gesture.current.startY));
+    }
+
+    // pinch zoom when two pointers active
+    if (pointers.current.size >= 2) {
+      const [a, b] = Array.from(pointers.current.values()).slice(0, 2);
+      if (modeRef.current !== "pinch") {
+        modeRef.current = "pinch";
+        gesture.current.startDist = dist(a, b);
+        gesture.current.startScale = scalePct;
+      } else {
+        const factor = dist(a, b) / Math.max(1, gesture.current.startDist);
+        const next = clamp(Math.round(gesture.current.startScale * factor), 10, 200);
+        setScalePct(next);
+      }
+    }
   };
-  const onPointerUp = () => {
-    drag.current.active = false;
+  const onDesignPointerUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2 && modeRef.current === "pinch") {
+      modeRef.current = "none";
+    }
+    if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  // ------- PRICING (unchanged) -------
+  /** ---------- Scale via corner handles (uniform) ---------- */
+  const onScaleHandleDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    modeRef.current = "scale";
+    const p = getLocalXY(e);
+    gesture.current.startDist = dist({ x: pos.x, y: pos.y }, p);
+    gesture.current.startScale = scalePct;
+  };
+  const onScaleHandleMove = (e: React.PointerEvent) => {
+    if (modeRef.current !== "scale") return;
+    const p = getLocalXY(e);
+    const f = dist({ x: pos.x, y: pos.y }, p) / Math.max(1, gesture.current.startDist);
+    const next = clamp(Math.round(gesture.current.startScale * f), 10, 200);
+    setScalePct(next);
+  };
+  const onScaleHandleUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (modeRef.current === "scale") modeRef.current = "none";
+  };
+
+  /** ---------- Rotate via top handle ---------- */
+  const onRotateHandleDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    modeRef.current = "rotate";
+    const p = getLocalXY(e);
+    gesture.current.startAngle = angleTo({ x: pos.x, y: pos.y }, p);
+    gesture.current.startRotation = rotationDeg;
+  };
+  const onRotateHandleMove = (e: React.PointerEvent) => {
+    if (modeRef.current !== "rotate") return;
+    const p = getLocalXY(e);
+    const a = angleTo({ x: pos.x, y: pos.y }, p);
+    const deltaDeg = deg(a - gesture.current.startAngle);
+    const next = clamp(Math.round(gesture.current.startRotation + deltaDeg), -45, 45);
+    setRotationDeg(next);
+  };
+  const onRotateHandleUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (modeRef.current === "rotate") modeRef.current = "none";
+  };
+
+  /** ---------- Wheel zoom (desktop) ---------- */
+  const onWheel = (e: React.WheelEvent) => {
+    // Ctrl+wheel typically zooms the page; we’ll ignore Ctrl to be polite
+    if (e.ctrlKey) return;
+    e.preventDefault();
+    const delta = e.deltaY; // positive => scroll down
+    const next = clamp(scalePct + (delta > 0 ? -3 : 3), 10, 200);
+    setScalePct(next);
+  };
+
+  /** ---------- Pricing (unchanged) ---------- */
   const unitPrice = useMemo(() => {
     const base = BASE_PRICE_MATERIAL[material] ?? 12;
     const colorFee = COLOR_SURCHARGE[color] ?? 0;
@@ -179,11 +289,6 @@ export default function EditPage() {
     () => +(unitPrice * Math.max(1, qty)).toFixed(2),
     [unitPrice, qty]
   );
-
-  // --------- PICK MOCKUP PNG BY SIDE + COLOR ----------
-  const teeSrc = useMemo(() => {
-    return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
-  }, [side, color]);
 
   if (!chosenImage) {
     return (
@@ -209,9 +314,10 @@ export default function EditPage() {
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div
             ref={containerRef}
-            className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white"
+            onWheel={onWheel}
+            className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
           >
-            {/* >>> Mockup PNG that reacts to side + color <<< */}
+            {/* Mockup PNG that reacts to side + color */}
             <img
               src={teeSrc}
               alt={`T-shirt mockup (${color} ${side})`}
@@ -223,31 +329,66 @@ export default function EditPage() {
             {/* Safe area */}
             <div className="pointer-events-none absolute left-1/2 top-[34%] h-[45%] w-[65%] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-dashed border-black/10" />
 
-            {/* Design layer */}
-            <img
-              src={chosenImage}
-              alt="Design"
-              onLoad={(e) => {
-                const i = e.currentTarget;
-                setImgRatio(i.naturalHeight / i.naturalWidth);
-                centerDesign();
-              }}
-              draggable={false}
-              onDragStart={(e) => e.preventDefault()}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              className="absolute cursor-move select-none pointer-events-auto"
+            {/* Design wrapper (rotates & scales) */}
+            <div
+              className="absolute"
               style={{
                 left: `${pos.x}px`,
                 top: `${pos.y}px`,
                 width: `${designWidthPx}px`,
-                height: "auto",
+                height: `${designHeightPx}px`,
                 transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
-                opacity: opacity / 100,
+                // Enable pointer interaction within the box
                 touchAction: "none",
               }}
-            />
+            >
+              {/* actual design image */}
+              <img
+                src={chosenImage}
+                alt="Design"
+                onLoad={(e) => {
+                  const i = e.currentTarget;
+                  setImgRatio(i.naturalHeight / i.naturalWidth);
+                  centerDesign();
+                }}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+                onPointerDown={onDesignPointerDown}
+                onPointerMove={onDesignPointerMove}
+                onPointerUp={onDesignPointerUp}
+                className="h-full w-full select-none cursor-move rounded-sm shadow-sm"
+                style={{ opacity: opacity / 100 }}
+              />
+
+              {/* bounding box overlay */}
+              <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
+
+              {/* corner scale handles (uniform scale from center) */}
+              {[
+                { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
+                { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
+                { k: "bl", style: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2" },
+                { k: "br", style: "right-0 bottom-0 translate-x-1/2 translate-y-1/2" },
+              ].map((h) => (
+                <div
+                  key={h.k}
+                  onPointerDown={onScaleHandleDown}
+                  onPointerMove={onScaleHandleMove}
+                  onPointerUp={onScaleHandleUp}
+                  className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
+                  title="Drag to scale"
+                />
+              ))}
+
+              {/* rotate handle (top-center) */}
+              <div
+                onPointerDown={onRotateHandleDown}
+                onPointerMove={onRotateHandleMove}
+                onPointerUp={onRotateHandleUp}
+                className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
+                title="Drag to rotate"
+              />
+            </div>
           </div>
         </div>
 
@@ -255,7 +396,7 @@ export default function EditPage() {
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">Adjust & Options</h2>
 
-          {/* Sliders */}
+          {/* Sliders (still available) */}
           <div className="grid gap-5">
             <div>
               <div className="mb-2 flex items-center justify-between text-sm">
@@ -264,8 +405,8 @@ export default function EditPage() {
               </div>
               <Slider
                 value={[scalePct]}
-                min={20}
-                max={120}
+                min={10}
+                max={200}
                 step={1}
                 onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
               />
@@ -280,8 +421,8 @@ export default function EditPage() {
               </div>
               <Slider
                 value={[rotationDeg]}
-                min={-30}
-                max={30}
+                min={-45}
+                max={45}
                 step={1}
                 onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
               />
@@ -409,7 +550,7 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Pricing summary (unchanged) */}
+          {/* Pricing summary */}
           <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
             <div className="flex items-center justify-between text-sm">
               <span>Base ({material})</span>
