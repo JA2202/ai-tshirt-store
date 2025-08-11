@@ -1,3 +1,4 @@
+// app/api/generate/route.ts
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
@@ -8,7 +9,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Strict literal unions keep TS happy and prevent bad values
+// Strict literal unions
 type ImgSize = "1024x1024" | "1024x1536" | "1536x1024" | "auto";
 type ImgQuality = "low" | "medium" | "high";
 
@@ -22,11 +23,17 @@ const ALLOWED_QUALITIES: readonly ImgQuality[] = ["low", "medium", "high"];
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const prompt: string = body?.prompt;
+    const body = (await req.json()) as Partial<{
+      prompt: string;
+      count: number;
+      size: ImgSize | string;
+      quality: ImgQuality | string;
+    }>;
+
+    const prompt = body?.prompt;
     const countRaw = Number(body?.count ?? 6);
-    const requestedSize: string = body?.size ?? "1024x1024";
-    const requestedQuality: string = body?.quality ?? "low"; // <<< default CHEAP
+    const requestedSize = (body?.size ?? "1024x1024") as string;
+    const requestedQuality = (body?.quality ?? "low") as string; // cheap default
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -50,13 +57,12 @@ export async function POST(req: Request) {
 
     const n = Math.min(8, Math.max(1, Number.isFinite(countRaw) ? countRaw : 6));
 
-    // Single cheaper call: pay prompt input once, get n images back
     const r = await openai.images.generate({
       model: "gpt-image-1",
       prompt,
       size,
-      quality,            // "low" | "medium" | "high"
-      n,                  // request multiple images in one call
+      quality, // "low" | "medium" | "high"
+      n,       // ask for n variants in one call
       // background: "transparent", // uncomment if you want transparent PNGs
     });
 
@@ -70,9 +76,10 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ images });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    const message = err?.message || err?.toString?.() || "Image generation failed";
+    const message =
+      err instanceof Error ? err.message : "Image generation failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
