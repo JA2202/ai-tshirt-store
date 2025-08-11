@@ -31,7 +31,7 @@ export default function GeneratePage() {
     useDesignStore();
 
   const [loading, setLoading] = useState(false);
-  const [count, setCount] = useState<number>(6);
+  const [count, setCount] = useState<number>(4); // ↓ default 4 to cut demo cost
 
   const onGenerate = async () => {
     if (!prompt.trim()) return;
@@ -42,7 +42,12 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, count, size: "1024x1024" }),
+        body: JSON.stringify({
+          prompt,
+          count,
+          size: "1024x1024",
+          quality: "low", // <<< cheapest tier
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to generate");
@@ -67,7 +72,6 @@ export default function GeneratePage() {
       <Stepper current={1} />
 
       <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        {/* Hero / Prompt row */}
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <Input
             value={prompt}
@@ -94,7 +98,7 @@ export default function GeneratePage() {
           </div>
         </div>
 
-        {/* Presets / Variants count */}
+        {/* Presets / Variants */}
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {PRESETS.map((p) => (
             <button
