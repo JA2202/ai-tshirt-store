@@ -15,14 +15,8 @@ import {
 } from "@/components/ui/dialog";
 
 type StyleKey =
-  | "realistic"
-  | "cartoon"
-  | "anime"
-  | "fine_line"
-  | "minimal"
-  | "vintage"
-  | "graphic_logo"
-  | "other";
+  | "realistic" | "cartoon" | "anime" | "fine_line"
+  | "minimal" | "vintage" | "graphic_logo" | "other";
 
 const STYLES: { key: StyleKey; label: string; token: string }[] = [
   { key: "realistic", label: "Realistic", token: "photorealistic, natural lighting, high detail" },
@@ -55,7 +49,7 @@ const SURPRISE = [
 
 function Dots() {
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center gap-1 align-middle">
       <span className="inline-block animate-bounce [animation-delay:-0.2s]">•</span>
       <span className="inline-block animate-bounce [animation-delay:-0.1s]">•</span>
       <span className="inline-block animate-bounce">•</span>
@@ -65,11 +59,10 @@ function Dots() {
 
 export default function GeneratePage() {
   const router = useRouter();
-  const { prompt, setPrompt, images, setImages, chosenImage, setChosenImage } =
-    useDesignStore();
+  const { prompt, setPrompt, images, setImages, chosenImage, setChosenImage } = useDesignStore();
 
   const [loading, setLoading] = useState(false);
-  const [count, setCount] = useState<number>(4); // cost-friendly default
+  const [count, setCount] = useState<number>(4);
   const [openModal, setOpenModal] = useState(false);
 
   // Modal options
@@ -78,11 +71,11 @@ export default function GeneratePage() {
   const [transparent, setTransparent] = useState(false);
   const [refPreview, setRefPreview] = useState<string | null>(null);
 
-  // Refine flow (kept hidden until clicked)
+  // Refine (folded by default)
   const [showRefine, setShowRefine] = useState(false);
   const [refine, setRefine] = useState("");
 
-  // Upload-your-own design
+  // Upload your own design
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const styleToken = STYLES.find((s) => s.key === styleKey)?.token || "";
@@ -108,22 +101,17 @@ export default function GeneratePage() {
     setLoading(true);
     setChosenImage(null);
     setImages([]);
-    setShowRefine(false); // <<< keep the refine section folded
+    setShowRefine(false); // keep folded after each run
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: finalPrompt,
-          count,
-          size: "1024x1024",
-          quality: "low",
-        }),
+        body: JSON.stringify({ prompt: finalPrompt, count, size: "1024x1024", quality: "low" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to generate");
       setImages(data.images || []);
-      setRefine(finalPrompt); // store prompt, but do NOT auto-open refine
+      setRefine(finalPrompt);
     } catch (e) {
       console.error(e);
       alert("Image generation failed. Check logs or credits.");
@@ -137,22 +125,7 @@ export default function GeneratePage() {
     setPrompt(idea);
   };
 
-  const canContinue = Boolean(chosenImage);
-
-  // Modal – reference upload (preview-only for now)
-  const onRefFile = (file: File | null) => {
-    if (!file) return setRefPreview(null);
-    const okTypes = ["image/png", "image/jpeg", "image/webp"];
-    if (!okTypes.includes(file.type)) {
-      alert("Please upload a PNG, JPG, or WebP.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => setRefPreview(String(reader.result));
-    reader.readAsDataURL(file);
-  };
-
-  // Upload your own design → editor
+  // Upload → editor
   const onDesignUpload = (file: File | null) => {
     if (!file) return;
     const ok = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -170,13 +143,27 @@ export default function GeneratePage() {
     reader.readAsDataURL(file);
   };
 
+  const onRefFile = (file: File | null) => {
+    if (!file) return setRefPreview(null);
+    const okTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!okTypes.includes(file.type)) {
+      alert("Please upload a PNG, JPG, or WebP.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setRefPreview(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+
+  const canContinue = Boolean(chosenImage);
+
   return (
     <>
       <Stepper current={1} />
 
-      <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        {/* Prompt row */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      {/* PROMPT BAR */}
+      <section className="rounded-2xl border bg-white p-4 sm:p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Input
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -189,13 +176,7 @@ export default function GeneratePage() {
               disabled={!prompt.trim()}
               className="h-12 rounded-xl bg-black px-5 text-white hover:bg-zinc-900 disabled:opacity-50"
             >
-              {loading ? (
-                <span className="inline-flex items-center gap-2">
-                  Generating <Dots />
-                </span>
-              ) : (
-                "Generate"
-              )}
+              {loading ? <span className="inline-flex items-center gap-2">Generating <Dots/></span> : "Generate"}
             </Button>
             <Button variant="outline" onClick={onSurprise} className="h-12 rounded-xl">
               🎲 Surprise
@@ -213,7 +194,6 @@ export default function GeneratePage() {
               variant="outline"
               className="h-12 rounded-xl"
               onClick={() => fileInputRef.current?.click()}
-              title="Upload your own artwork (PNG/JPG/WebP/SVG)"
             >
               Upload your design
             </Button>
@@ -221,19 +201,18 @@ export default function GeneratePage() {
         </div>
 
         {/* Presets / Variants */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {PRESETS.map((p) => (
             <button
               key={p}
               onClick={() => setPrompt(prompt ? `${prompt}, ${p}` : p)}
               className="rounded-full border px-3 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-50"
-              title="Add this style to your prompt"
             >
               {p}
             </button>
           ))}
 
-          <div className="ml-auto flex items-center gap-2 text-sm">
+          <div className="mt-2 sm:mt-0 sm:ml-auto flex items-center gap-2 text-sm">
             <span className="text-zinc-600">Variants</span>
             {[2, 4, 6, 8].map((n) => (
               <button
@@ -250,25 +229,24 @@ export default function GeneratePage() {
         </div>
       </section>
 
-      {/* Results */}
-      <section className="mt-6">
+      {/* RESULTS */}
+      <section className="mt-5">
         {loading && (
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            {/* Skeleton grid */}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border bg-white p-4 sm:p-5 shadow-sm">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               {Array.from({ length: count }).map((_, i) => (
                 <div key={i} className="aspect-square w-full animate-pulse rounded-xl bg-zinc-100" />
               ))}
             </div>
-            <div className="mt-4 text-sm text-zinc-600">
+            <div className="mt-3 text-sm text-zinc-600">
               Generating images <Dots />
             </div>
           </div>
         )}
 
         {!loading && images.length > 0 && (
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border bg-white p-4 sm:p-5 shadow-sm">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               {images.map((url, idx) => (
                 <button
                   key={idx}
@@ -278,23 +256,36 @@ export default function GeneratePage() {
                   }`}
                   title="Select this design"
                 >
-                  <img src={url} alt={`generated ${idx + 1}`} className="aspect-square w-full object-cover" />
+                  <img
+                    src={url}
+                    alt={`generated ${idx + 1}`}
+                    className="aspect-square w-full object-cover"
+                  />
                   <div className="pointer-events-none absolute inset-0 rounded-xl ring-inset transition group-hover:ring-2 group-hover:ring-zinc-300" />
                 </button>
               ))}
             </div>
 
-            {/* Refine / make changes (folded by default) */}
-            <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
-              <div className="flex items-center justify-between">
+            {/* Refine (folded) + Continue */}
+            <div className="mt-4 rounded-xl border bg-zinc-50 p-3 sm:p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-zinc-700">Want tweaks? Adjust the prompt and regenerate.</p>
-                <Button variant="outline" onClick={() => setShowRefine((s) => !s)}>
-                  {showRefine ? "Hide changes" : "Make changes"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setShowRefine((s) => !s)}>
+                    {showRefine ? "Hide changes" : "Make changes"}
+                  </Button>
+                  <Button
+                    disabled={!Boolean(chosenImage)}
+                    onClick={() => router.push("/edit")}
+                    className="rounded-xl bg-black text-white hover:bg-zinc-900 disabled:opacity-40"
+                  >
+                    Continue to Editor →
+                  </Button>
+                </div>
               </div>
 
               {showRefine && (
-                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="mt-3 grid gap-2 sm:flex sm:items-center">
                   <Input
                     value={refine}
                     onChange={(e) => setRefine(e.target.value)}
@@ -334,32 +325,18 @@ export default function GeneratePage() {
                   </Button>
                 </div>
               )}
-
-              <div className="mt-4 flex items-center justify-between">
-                <Button variant="outline" onClick={onClickGenerate} title="Open style/background/reference options">
-                  Adjust style & options
-                </Button>
-                <Button
-                  disabled={!canContinue}
-                  onClick={() => router.push("/edit")}
-                  className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900 disabled:opacity-40"
-                >
-                  Continue to Editor →
-                </Button>
-              </div>
             </div>
           </div>
         )}
       </section>
 
-      {/* --------- Modal: Style / Transparent / Reference --------- */}
+      {/* MODAL: Style / Transparent / Reference */}
       <Dialog open={openModal} onOpenChange={setOpenModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg w-[96vw]">
           <DialogHeader>
             <DialogTitle>Style & options</DialogTitle>
           </DialogHeader>
 
-        {/* Style */}
           <div className="mt-2">
             <div className="mb-2 text-sm text-zinc-600">What type of style?</div>
             <div className="flex flex-wrap gap-2">
@@ -386,7 +363,6 @@ export default function GeneratePage() {
             )}
           </div>
 
-          {/* Transparent background */}
           <div className="mt-4 flex items-center gap-2">
             <input
               id="transparent-bg"
@@ -399,28 +375,24 @@ export default function GeneratePage() {
               Transparent background
             </label>
           </div>
-          <p className="mt-1 text-xs text-zinc-500">
-            Demo note: we steer the model via prompt text for transparency. We can wire true transparent PNGs later.
-          </p>
 
-          {/* Reference image (preview only) */}
           <div className="mt-4">
             <div className="mb-2 text-sm text-zinc-600">Upload reference (optional)</div>
-            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onRefFile(e.target.files?.[0] ?? null)} />
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => onRefFile(e.target.files?.[0] ?? null)}
+            />
             {refPreview && (
               <div className="mt-2">
-                <img src={refPreview} alt="Reference preview" className="h-24 w-24 rounded border object-cover" />
+                <img src={refPreview} alt="Reference" className="h-24 w-24 rounded border object-cover" />
               </div>
             )}
           </div>
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setOpenModal(false)}>
-              Cancel
-            </Button>
-            <Button onClick={reallyGenerate} className="bg-black text-white">
-              Apply & Generate
-            </Button>
+            <Button variant="outline" onClick={() => setOpenModal(false)}>Cancel</Button>
+            <Button onClick={reallyGenerate} className="bg-black text-white">Apply & Generate</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

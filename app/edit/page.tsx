@@ -126,7 +126,6 @@ export default function EditPage() {
     startDist: 0,
     startAngle: 0,
   });
-  // SINGLE declaration of `pointers` (fixes redeclare error)
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   // quantity for pricing
@@ -571,17 +570,113 @@ export default function EditPage() {
 
   const allLoaded = teeLoaded && artLoaded;
 
+  /** ---------- Reusable renderer for options (used in desktop + mobile accordion) ---------- */
+  const Options = () => (
+    <div className="grid gap-4">
+      {/* Side */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="w-20 text-sm text-zinc-600">Side</span>
+        <div className="flex gap-2">
+          {(["front", "back"] as Side[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSide(s)}
+              className={`rounded-lg px-3 py-2 text-sm transition ${
+                s === side ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Color */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="w-20 text-sm text-zinc-600">Color</span>
+        <div className="flex gap-2">
+          {COLORS.map((c) => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
+                color === c ? "ring-2 ring-black" : ""
+              }`}
+              title={c}
+            >
+              <span
+                className="inline-block h-4 w-4 rounded-full border"
+                style={{
+                  background: c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
+                  borderColor: c === "white" ? "#e5e7eb" : "transparent",
+                }}
+              />
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Size */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="w-20 text-sm text-zinc-600">Size</span>
+        <div className="flex flex-wrap gap-2">
+          {SIZES.map((s) => (
+            <button
+              key={s}
+              onClick={() => setSize(s)}
+              className={`rounded-lg px-3 py-2 text-sm transition ${
+                size === s ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Material */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="w-20 text-sm text-zinc-600">Material</span>
+        <div className="flex flex-wrap gap-2">
+          {MATERIALS.map((m) => (
+            <button
+              key={m}
+              onClick={() => setMaterial(m)}
+              className={`rounded-lg px-3 py-2 text-sm transition ${
+                material === m ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Quantity */}
+      <div className="flex items-center gap-3">
+        <span className="w-20 text-sm text-zinc-600">Quantity</span>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>−</Button>
+          <span className="w-10 text-center tabular-nums">{qty}</span>
+          <Button variant="outline" onClick={() => setQty((q) => q + 1)}>+</Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <Stepper current={2} />
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+      {/* pb-24 to avoid overlap with sticky bar on mobile */}
+      <div className="grid gap-6 pb-24 md:pb-0 lg:grid-cols-[1.1fr_0.9fr]">
         {/* Canvas card */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div
             ref={containerRef}
             onWheel={onWheel}
-            className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
+            className="relative mx-auto aspect-[3/4] w-full max-w-xl min-h-[60vh] overflow-hidden rounded-2xl border bg-white touch-none"
           >
             {/* Loading skeleton overlay */}
             {!allLoaded && (
@@ -658,7 +753,7 @@ export default function EditPage() {
               {/* bounding box */}
               <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
 
-              {/* corner scale handles */}
+              {/* corner scale handles (bigger on mobile) */}
               {[
                 { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
                 { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
@@ -670,17 +765,17 @@ export default function EditPage() {
                   onPointerDown={onScaleHandleDown}
                   onPointerMove={onScaleHandleMove}
                   onPointerUp={onScaleHandleUp}
-                  className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
+                  className={`absolute ${h.style} z-10 h-6 w-6 md:h-4 md:w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
                   title="Drag to scale"
                 />
               ))}
 
-              {/* rotate handle */}
+              {/* rotate handle (bigger on mobile) */}
               <div
                 onPointerDown={onRotateHandleDown}
                 onPointerMove={onRotateHandleMove}
                 onPointerUp={onRotateHandleUp}
-                className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
+                className="absolute left-1/2 top-0 z-10 h-5 w-5 md:h-3 md:w-3 -translate-x-1/2 -translate-y-7 md:-translate-y-6 cursor-grab rounded-full border border-white bg-black"
                 title="Drag to rotate (hold Shift to snap)"
               />
             </div>
@@ -689,9 +784,9 @@ export default function EditPage() {
 
         {/* Control panel */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">Adjust & Options</h2>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
                 Undo
               </Button>
@@ -754,100 +849,24 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Segmented options */}
-          <div className="mt-6 grid gap-4">
-            {/* Side */}
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Side</span>
-              <div className="flex gap-2">
-                {(["front", "back"] as Side[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSide(s)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      s === side ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
+          {/* Tee options: accordion on mobile, expanded on desktop */}
+          <div className="mt-6">
+            {/* Mobile accordion */}
+            <details className="md:hidden rounded-xl border">
+              <summary className="cursor-pointer list-none rounded-xl px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Tee options</span>
+                  <span className="text-sm text-zinc-500">Side, Colour, Size, Material, Qty</span>
+                </div>
+              </summary>
+              <div className="border-t p-4">
+                <Options />
               </div>
-            </div>
+            </details>
 
-            {/* Color */}
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Color</span>
-              <div className="flex gap-2">
-                {COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
-                      color === c ? "ring-2 ring-black" : ""
-                    }`}
-                    title={c}
-                  >
-                    <span
-                      className="inline-block h-4 w-4 rounded-full border"
-                      style={{
-                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
-                        borderColor: c === "white" ? "#e5e7eb" : "transparent",
-                      }}
-                    />
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Size */}
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Size</span>
-              <div className="flex flex-wrap gap-2">
-                {SIZES.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSize(s)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      size === s ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Material */}
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Material</span>
-              <div className="flex flex-wrap gap-2">
-                {MATERIALS.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMaterial(m)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      material === m ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quantity */}
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Quantity</span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
-                  −
-                </Button>
-                <span className="w-10 text-center tabular-nums">{qty}</span>
-                <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
-                  +
-                </Button>
-              </div>
+            {/* Desktop expanded */}
+            <div className="hidden md:block">
+              <Options />
             </div>
           </div>
 
@@ -881,11 +900,11 @@ export default function EditPage() {
           </div>
 
           {/* Footer actions */}
-          <div className="mt-6 flex items-center justify-between">
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Link href="/generate" className="text-sm text-zinc-600 underline">
               ← Back to Generate
             </Link>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -894,11 +913,12 @@ export default function EditPage() {
                   setOpacity(100);
                   centerDesign();
                 }}
+                className="w-full sm:w-auto"
               >
                 Reset
               </Button>
               <Button
-                className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
+                className="w-full sm:w-auto rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
                 onClick={() => {
                   alert(
                     [
@@ -917,6 +937,34 @@ export default function EditPage() {
               </Button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Sticky mobile CTA bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/70 md:hidden">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-zinc-600">Total</div>
+            <div className="truncate text-base font-semibold">{gbp.format(totalPrice)}</div>
+          </div>
+          <Button
+            className="w-1/2 rounded-xl bg-black text-white hover:bg-zinc-900"
+            onClick={() => {
+              alert(
+                [
+                  `Side: ${side}`,
+                  `Color: ${color}`,
+                  `Size: ${size}`,
+                  `Material: ${material}`,
+                  `Qty: ${qty}`,
+                  `Unit: ${gbp.format(unitPrice)}`,
+                  `Total: ${gbp.format(totalPrice)}`,
+                ].join("\n")
+              );
+            }}
+          >
+            Continue to payment
+          </Button>
         </div>
       </div>
     </>
