@@ -55,9 +55,33 @@ const TEE_FALLBACK = "/tee.png";
 
 /** ---------- Helpers ---------- */
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const rad = (deg: number) => (deg * Math.PI) / 180;
 const deg = (rad: number) => (rad * 180) / Math.PI;
 
 type GestureMode = "none" | "drag" | "scale" | "rotate" | "pinch";
+
+type Snapshot = {
+  x: number;
+  y: number;
+  scalePct: number;
+  rotationDeg: number;
+  opacity: number;
+  side: Side;
+  color: Color;
+  size: string;
+  material: Material;
+};
+
+// progress dots
+function Dots() {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-block animate-bounce [animation-delay:-0.2s]">•</span>
+      <span className="inline-block animate-bounce [animation-delay:-0.1s]">•</span>
+      <span className="inline-block animate-bounce">•</span>
+    </span>
+  );
+}
 
 export default function EditPage() {
   const router = useRouter();
@@ -79,11 +103,18 @@ export default function EditPage() {
 
   /** ---------- Editor state ---------- */
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const teeImgRef = useRef<HTMLImageElement | null>(null);
+
   const [scalePct, setScalePct] = useState(60);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [opacity, setOpacity] = useState(100);
-  const [imgRatio, setImgRatio] = useState(1);
+  const [imgRatio, setImgRatio] = useState(1); // design h/w ratio
+  const [teeRatio, setTeeRatio] = useState(1); // mockup h/w ratio
   const [pos, setPos] = useState({ x: 0, y: 0 }); // center in container px
+
+  // loading skeleton flags
+  const [teeLoaded, setTeeLoaded] = useState(false);
+  const [artLoaded, setArtLoaded] = useState(false);
 
   // gesture bookkeeping
   const modeRef = useRef<GestureMode>("none");
@@ -95,8 +126,7 @@ export default function EditPage() {
     startDist: 0,
     startAngle: 0,
   });
-
-  // track pointers for pinch
+  // SINGLE declaration of `pointers` (fixes redeclare error)
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   // quantity for pricing
@@ -128,6 +158,57 @@ export default function EditPage() {
     [designWidthPx, imgRatio]
   );
 
+  /** ---------- Snap guides (position) ---------- */
+  const [vGuide, setVGuide] = useState<number | null>(null);
+  const [hGuide, setHGuide] = useState<number | null>(null);
+  const guideTimer = useRef<number | null>(null);
+  const SNAP = 8;
+
+  const clearGuidesSoon = () => {
+    if (guideTimer.current) window.clearTimeout(guideTimer.current);
+    guideTimer.current = window.setTimeout(() => {
+      setVGuide(null);
+      setHGuide(null);
+    }, 350);
+  };
+
+  const applySnap = (x: number, y: number) => {
+    let snappedX = x;
+    let snappedY = y;
+    let showV: number | null = null;
+    let showH: number | null = null;
+
+    const halfW = designWidthPx / 2;
+    const halfH = designHeightPx / 2;
+    const centerX = safeRect.x + safeRect.w / 2;
+    const centerY = safeRect.y + safeRect.h / 2;
+    const leftX = safeRect.x + halfW;
+    const rightX = safeRect.x + safeRect.w - halfW;
+    const topY = safeRect.y + halfH;
+    const bottomY = safeRect.y + safeRect.h - halfH;
+
+    if (Math.abs(x - centerX) <= SNAP) {
+      snappedX = centerX; showV = centerX;
+    } else if (Math.abs(x - leftX) <= SNAP) {
+      snappedX = leftX; showV = safeRect.x;
+    } else if (Math.abs(x - rightX) <= SNAP) {
+      snappedX = rightX; showV = safeRect.x + safeRect.w;
+    }
+
+    if (Math.abs(y - centerY) <= SNAP) {
+      snappedY = centerY; showH = centerY;
+    } else if (Math.abs(y - topY) <= SNAP) {
+      snappedY = topY; showH = safeRect.y;
+    } else if (Math.abs(y - bottomY) <= SNAP) {
+      snappedY = bottomY; showH = safeRect.y + safeRect.h;
+    }
+
+    setVGuide(showV);
+    setHGuide(showH);
+    if (showV || showH) clearGuidesSoon();
+    return { x: snappedX, y: snappedY };
+  };
+
   const clampCenterToSafe = (x: number, y: number) => {
     const halfW = designWidthPx / 2;
     const halfH = designHeightPx / 2;
@@ -138,10 +219,8 @@ export default function EditPage() {
     if (minX > maxX || minY > maxY) {
       return { x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 };
     }
-    return {
-      x: clamp(x, minX, maxX),
-      y: clamp(y, minY, maxY),
-    };
+    const clamped = { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
+    return applySnap(clamped.x, clamped.y);
   };
 
   const centerDesign = () => {
@@ -184,21 +263,14 @@ export default function EditPage() {
     const p = getLocalXY(e);
     gesture.current.startX = p.x - pos.x;
     gesture.current.startY = p.y - pos.y;
-
-    // track pointer for pinch if a second finger arrives
     pointers.current.set(e.pointerId, p);
   };
   const onDesignPointerMove = (e: React.PointerEvent) => {
-    // update tracked pointer
-    if (pointers.current.has(e.pointerId)) {
-      pointers.current.set(e.pointerId, getLocalXY(e));
-    }
-
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, getLocalXY(e));
     if (modeRef.current === "drag") {
       const p = getLocalXY(e);
       setPos(clampCenterToSafe(p.x - gesture.current.startX, p.y - gesture.current.startY));
     }
-
     // pinch zoom when two pointers active
     if (pointers.current.size >= 2) {
       const [a, b] = Array.from(pointers.current.values()).slice(0, 2);
@@ -216,13 +288,11 @@ export default function EditPage() {
   const onDesignPointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2 && modeRef.current === "pinch") {
-      modeRef.current = "none";
-    }
+    if (pointers.current.size < 2 && modeRef.current === "pinch") modeRef.current = "none";
     if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  /** ---------- Scale via corner handles (uniform) ---------- */
+  /** ---------- Scale via corner handles ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -244,7 +314,10 @@ export default function EditPage() {
     if (modeRef.current === "scale") modeRef.current = "none";
   };
 
-  /** ---------- Rotate via top handle ---------- */
+  /** ---------- Rotate via top handle (with Snap Angle) ---------- */
+  const SNAP_ANGLE = 15; // degrees
+  const MAGNET = 4; // degrees threshold to auto-snap near canonical angles
+
   const onRotateHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -259,7 +332,18 @@ export default function EditPage() {
     const p = getLocalXY(e);
     const a = angleTo({ x: pos.x, y: pos.y }, p);
     const deltaDeg = deg(a - gesture.current.startAngle);
-    const next = clamp(Math.round(gesture.current.startRotation + deltaDeg), -45, 45);
+    let next = gesture.current.startRotation + deltaDeg;
+
+    // Hold Shift → hard snap to 15° increments
+    if (e.shiftKey) {
+      next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+    } else {
+      // Soft magnet near multiples of 15°
+      const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+      if (Math.abs(nearest - next) <= MAGNET) next = nearest;
+    }
+
+    next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
   };
   const onRotateHandleUp = (e: React.PointerEvent) => {
@@ -269,13 +353,132 @@ export default function EditPage() {
 
   /** ---------- Wheel zoom (desktop) ---------- */
   const onWheel = (e: React.WheelEvent) => {
-    // Ctrl+wheel typically zooms the page; we’ll ignore Ctrl to be polite
     if (e.ctrlKey) return;
     e.preventDefault();
-    const delta = e.deltaY; // positive => scroll down
+    const delta = e.deltaY;
     const next = clamp(scalePct + (delta > 0 ? -3 : 3), 10, 200);
     setScalePct(next);
   };
+
+  /** ---------- Keyboard nudge & undo/redo ---------- */
+  const isTextInput = (el: Element | null) =>
+    !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+
+  const history = useRef<Snapshot[]>([]);
+  const index = useRef<number>(-1);
+  const applyingHistory = useRef(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const debTimer = useRef<number | null>(null);
+
+  const capture = (): Snapshot => ({
+    x: pos.x,
+    y: pos.y,
+    scalePct,
+    rotationDeg,
+    opacity,
+    side,
+    color,
+    size,
+    material,
+  });
+
+  const applySnapshot = (s: Snapshot) => {
+    applyingHistory.current = true;
+    setPos({ x: s.x, y: s.y });
+    setScalePct(s.scalePct);
+    setRotationDeg(s.rotationDeg);
+    setOpacity(s.opacity);
+    setSide(s.side);
+    setColor(s.color);
+    setSize(s.size);
+    setMaterial(s.material);
+    setTimeout(() => (applyingHistory.current = false), 0);
+  };
+
+  const pushHistory = (s: Snapshot) => {
+    const last = history.current[index.current];
+    const same =
+      last &&
+      last.x === s.x &&
+      last.y === s.y &&
+      last.scalePct === s.scalePct &&
+      last.rotationDeg === s.rotationDeg &&
+      last.opacity === s.opacity &&
+      last.side === s.side &&
+      last.color === s.color &&
+      last.size === s.size &&
+      last.material === s.material;
+    if (same) return;
+    history.current = history.current.slice(0, index.current + 1);
+    history.current.push(s);
+    index.current++;
+    setCanUndo(index.current > 0);
+    setCanRedo(index.current < history.current.length - 1);
+  };
+
+  // initial snapshot
+  useEffect(() => {
+    pushHistory(capture());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // debounced snapshot on changes
+  useEffect(() => {
+    if (applyingHistory.current) return;
+    if (debTimer.current) window.clearTimeout(debTimer.current);
+    debTimer.current = window.setTimeout(() => pushHistory(capture()), 220);
+    return () => {
+      if (debTimer.current) window.clearTimeout(debTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pos.x, pos.y, scalePct, rotationDeg, opacity, side, color, size, material]);
+
+  const undo = () => {
+    if (index.current <= 0) return;
+    index.current--;
+    applySnapshot(history.current[index.current]);
+    setCanUndo(index.current > 0);
+    setCanRedo(index.current < history.current.length - 1);
+  };
+  const redo = () => {
+    if (index.current >= history.current.length - 1) return;
+    index.current++;
+    applySnapshot(history.current[index.current]);
+    setCanUndo(index.current > 0);
+    setCanRedo(index.current < history.current.length - 1);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTextInput(document.activeElement)) return;
+
+      // Undo / Redo
+      const z = e.key.toLowerCase() === "z";
+      const y = e.key.toLowerCase() === "y";
+      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
+        e.preventDefault(); undo(); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (y || (z && e.shiftKey))) {
+        e.preventDefault(); redo(); return;
+      }
+
+      // Nudge
+      let dx = 0, dy = 0;
+      if (e.key === "ArrowLeft") dx = -1;
+      else if (e.key === "ArrowRight") dx = 1;
+      else if (e.key === "ArrowUp") dy = -1;
+      else if (e.key === "ArrowDown") dy = 1;
+      if (dx || dy) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        setPos((p) => clampCenterToSafe(p.x + dx * step, p.y + dy * step));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clampCenterToSafe]);
 
   /** ---------- Pricing (unchanged) ---------- */
   const unitPrice = useMemo(() => {
@@ -289,6 +492,67 @@ export default function EditPage() {
     () => +(unitPrice * Math.max(1, qty)).toFixed(2),
     [unitPrice, qty]
   );
+
+  /** ---------- Download mockup JPG ---------- */
+  const downloadJPG = async () => {
+    try {
+      if (!containerRef.current) return;
+      const W = containerRef.current.clientWidth;
+      const H = containerRef.current.clientHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(W * dpr));
+      canvas.height = Math.max(1, Math.floor(H * dpr));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.scale(dpr, dpr);
+
+      // white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, W, H);
+
+      // draw tee mockup centered at 90% width
+      const tee = new Image();
+      tee.crossOrigin = "anonymous";
+      tee.src = teeSrc;
+      await new Promise<void>((resolve) => {
+        tee.onload = () => resolve();
+        tee.onerror = () => resolve();
+      });
+      const teeW = W * 0.9;
+      const teeH = teeW * (teeRatio || 1);
+      const teeX = (W - teeW) / 2;
+      const teeY = (H - teeH) / 2;
+      if (tee.complete) ctx.drawImage(tee, teeX, teeY, teeW, teeH);
+
+      // draw design with rotation/opacity
+      const art = new Image();
+      art.crossOrigin = "anonymous";
+      art.src = chosenImage!;
+      await new Promise<void>((resolve) => {
+        art.onload = () => resolve();
+        art.onerror = () => resolve();
+      });
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(rad(rotationDeg));
+      ctx.globalAlpha = opacity / 100;
+      ctx.drawImage(art, -designWidthPx / 2, -designHeightPx / 2, designWidthPx, designHeightPx);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+
+      const url = canvas.toDataURL("image/jpeg", 0.9);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mockup_${color}_${side}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      console.error(e);
+      alert("Could not export JPG (likely CORS from remote image). Try using an uploaded design, then Download again.");
+    }
+  };
 
   if (!chosenImage) {
     return (
@@ -305,6 +569,8 @@ export default function EditPage() {
     );
   }
 
+  const allLoaded = teeLoaded && artLoaded;
+
   return (
     <>
       <Stepper current={2} />
@@ -317,11 +583,26 @@ export default function EditPage() {
             onWheel={onWheel}
             className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
           >
-            {/* Mockup PNG that reacts to side + color */}
+            {/* Loading skeleton overlay */}
+            {!allLoaded && (
+              <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
+                <div className="animate-pulse rounded-xl bg-zinc-200 p-6 text-sm text-zinc-600">
+                  Preparing editor <Dots />
+                </div>
+              </div>
+            )}
+
+            {/* Mockup PNG */}
             <img
+              ref={teeImgRef}
               src={teeSrc}
               alt={`T-shirt mockup (${color} ${side})`}
               draggable={false}
+              onLoad={(e) => {
+                setTeeLoaded(true);
+                const i = e.currentTarget as HTMLImageElement;
+                if (i.naturalWidth) setTeeRatio(i.naturalHeight / i.naturalWidth);
+              }}
               onDragStart={(e) => e.preventDefault()}
               className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none"
             />
@@ -329,7 +610,21 @@ export default function EditPage() {
             {/* Safe area */}
             <div className="pointer-events-none absolute left-1/2 top-[34%] h-[45%] w-[65%] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-dashed border-black/10" />
 
-            {/* Design wrapper (rotates & scales) */}
+            {/* Snap guides */}
+            {vGuide !== null && (
+              <div
+                className="pointer-events-none absolute top-0 h-full w-px bg-black/20"
+                style={{ left: vGuide }}
+              />
+            )}
+            {hGuide !== null && (
+              <div
+                className="pointer-events-none absolute left-0 w-full border-t border-black/20"
+                style={{ top: hGuide }}
+              />
+            )}
+
+            {/* Design wrapper */}
             <div
               className="absolute"
               style={{
@@ -338,17 +633,17 @@ export default function EditPage() {
                 width: `${designWidthPx}px`,
                 height: `${designHeightPx}px`,
                 transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
-                // Enable pointer interaction within the box
                 touchAction: "none",
               }}
             >
-              {/* actual design image */}
+              {/* Design image */}
               <img
                 src={chosenImage}
                 alt="Design"
                 onLoad={(e) => {
+                  setArtLoaded(true);
                   const i = e.currentTarget;
-                  setImgRatio(i.naturalHeight / i.naturalWidth);
+                  setImgRatio(i.naturalHeight / i.naturalWidth || 1);
                   centerDesign();
                 }}
                 draggable={false}
@@ -360,10 +655,10 @@ export default function EditPage() {
                 style={{ opacity: opacity / 100 }}
               />
 
-              {/* bounding box overlay */}
+              {/* bounding box */}
               <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
 
-              {/* corner scale handles (uniform scale from center) */}
+              {/* corner scale handles */}
               {[
                 { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
                 { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
@@ -380,13 +675,13 @@ export default function EditPage() {
                 />
               ))}
 
-              {/* rotate handle (top-center) */}
+              {/* rotate handle */}
               <div
                 onPointerDown={onRotateHandleDown}
                 onPointerMove={onRotateHandleMove}
                 onPointerUp={onRotateHandleUp}
                 className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
-                title="Drag to rotate"
+                title="Drag to rotate (hold Shift to snap)"
               />
             </div>
           </div>
@@ -394,9 +689,27 @@ export default function EditPage() {
 
         {/* Control panel */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">Adjust & Options</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Adjust & Options</h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
+                Undo
+              </Button>
+              <Button
+                variant="outline"
+                onClick={redo}
+                disabled={!canRedo}
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+              >
+                Redo
+              </Button>
+              <Button variant="outline" onClick={downloadJPG} title="Download mockup as JPG">
+                Download mockup JPG
+              </Button>
+            </div>
+          </div>
 
-          {/* Sliders (still available) */}
+          {/* Sliders */}
           <div className="grid gap-5">
             <div>
               <div className="mb-2 flex items-center justify-between text-sm">
@@ -415,9 +728,7 @@ export default function EditPage() {
             <div>
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="text-zinc-600">Rotation</span>
-                <span className="tabular-nums text-zinc-500">
-                  {rotationDeg}°
-                </span>
+                <span className="tabular-nums text-zinc-500">{rotationDeg}°</span>
               </div>
               <Slider
                 value={[rotationDeg]}
@@ -454,9 +765,7 @@ export default function EditPage() {
                     key={s}
                     onClick={() => setSide(s)}
                     className={`rounded-lg px-3 py-2 text-sm transition ${
-                      s === side
-                        ? "bg-black text-white"
-                        : "border bg-white hover:bg-zinc-50"
+                      s === side ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
                     }`}
                   >
                     {s}
@@ -481,8 +790,7 @@ export default function EditPage() {
                     <span
                       className="inline-block h-4 w-4 rounded-full border"
                       style={{
-                        background:
-                          c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
+                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
                         borderColor: c === "white" ? "#e5e7eb" : "transparent",
                       }}
                     />
@@ -501,9 +809,7 @@ export default function EditPage() {
                     key={s}
                     onClick={() => setSize(s)}
                     className={`rounded-lg px-3 py-2 text-sm transition ${
-                      size === s
-                        ? "bg-black text-white"
-                        : "border bg-white hover:bg-zinc-50"
+                      size === s ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
                     }`}
                   >
                     {s}
@@ -521,9 +827,7 @@ export default function EditPage() {
                     key={m}
                     onClick={() => setMaterial(m)}
                     className={`rounded-lg px-3 py-2 text-sm transition ${
-                      material === m
-                        ? "bg-black text-white"
-                        : "border bg-white hover:bg-zinc-50"
+                      material === m ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
                     }`}
                   >
                     {m}
@@ -536,10 +840,7 @@ export default function EditPage() {
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Quantity</span>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
-                >
+                <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
                   −
                 </Button>
                 <span className="w-10 text-center tabular-nums">{qty}</span>
