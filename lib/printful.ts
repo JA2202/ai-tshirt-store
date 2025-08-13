@@ -96,7 +96,6 @@ export type MaterialKey = "standard" | "eco" | "premium";
  * IMPORTANT: Fill these with real Printful catalog variant_ids you listed
  * via /products/{id}.variants (e.g., 11547 for Gildan 5000 Black / M).
 */
-
 const VARIANTS: Record<MaterialKey, Record<ColorKey, Record<SizeKey, number>>> = {
   standard: {
     white:  { XS: 0, S: 11576, M: 11577, L: 11578, XL: 11579, XXL: 11580 }, // example placeholders

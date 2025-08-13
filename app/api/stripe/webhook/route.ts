@@ -173,28 +173,41 @@ export async function POST(req: Request) {
 
       const variantId = resolveVariantId(material, color, size);
 
-      // Create a DRAFT order in Printful v2 (DTG, front/back)
-      const order = await createDraftOrderV2({
-        external_id: `stripe_${full.id}`,
-        recipient,
-        retail_costs: { currency: "GBP" },
-        order_items: [
-          {
-            source: "catalog",
-            catalog_variant_id: variantId,
-            quantity: qty,
-            placements: [
-              {
-                placement: side, // "front" | "back"
-                technique: "dtg",
-                layers: [{ type: "file", url: printFileUrl }],
-              },
-            ],
-          },
-        ],
-      });
+      // ⚙️ FIX: Use short, unique, idempotent external_id (Printful max 32 chars)
+      const externalId = event.id.slice(0, 32);
 
-      console.log("✅ Printful v2 draft order created:", JSON.stringify(order));
+      // Create a DRAFT order in Printful v2 (DTG, front/back)
+      try {
+        const order = await createDraftOrderV2({
+          external_id: externalId,
+          recipient,
+          retail_costs: { currency: "GBP" },
+          order_items: [
+            {
+              source: "catalog",
+              catalog_variant_id: variantId,
+              quantity: qty,
+              placements: [
+                {
+                  placement: side, // "front" | "back"
+                  technique: "dtg",
+                  layers: [{ type: "file", url: printFileUrl }],
+                },
+              ],
+            },
+          ],
+        });
+
+        console.log("✅ Printful v2 draft order created:", JSON.stringify(order));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // If external_id was already used, treat as idempotent success (retry)
+        if (msg.includes("external_id") && msg.includes("already used")) {
+          console.warn("Printful order already exists for", externalId, "- treating as success.");
+        } else {
+          throw e;
+        }
+      }
     }
 
     return new NextResponse("ok", { status: 200 });

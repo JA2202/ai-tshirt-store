@@ -8,7 +8,7 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-/** ---------- Pricing (same as before; using heather) ---------- */
+/* ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "navy"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
@@ -38,7 +38,7 @@ const gbp = new Intl.NumberFormat("en-GB", {
   maximumFractionDigits: 2,
 });
 
-/** ---------- Mockup map (heather back in) ---------- */
+/* ---------- Mockups (side+color) ---------- */
 const TEE_MAP: Record<Side, Record<Color, string>> = {
   front: {
     white: "/mockups/tee_white_front.png",
@@ -53,10 +53,11 @@ const TEE_MAP: Record<Side, Record<Color, string>> = {
 };
 const TEE_FALLBACK = "/tee.png";
 
-/** ---------- Helpers ---------- */
-const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+/* ---------- Helpers ---------- */
+const clamp = (v: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v));
 const rad = (deg: number) => (deg * Math.PI) / 180;
-const deg = (rad: number) => (rad * 180) / Math.PI;
+const deg = (r: number) => (r * 180) / Math.PI;
 
 type GestureMode = "none" | "drag" | "scale" | "rotate" | "pinch";
 
@@ -72,7 +73,6 @@ type Snapshot = {
   material: Material;
 };
 
-// progress dots
 function Dots() {
   return (
     <span className="inline-flex items-center gap-1">
@@ -101,22 +101,24 @@ export default function EditPage() {
     if (!chosenImage) router.replace("/generate");
   }, [chosenImage, router]);
 
-  /** ---------- Editor state ---------- */
+  /* ---------- Editor state ---------- */
   const containerRef = useRef<HTMLDivElement | null>(null);
   const teeImgRef = useRef<HTMLImageElement | null>(null);
 
   const [scalePct, setScalePct] = useState(60);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [opacity, setOpacity] = useState(100);
-  const [imgRatio, setImgRatio] = useState(1); // design h/w ratio
-  const [teeRatio, setTeeRatio] = useState(1); // mockup h/w ratio
-  const [pos, setPos] = useState({ x: 0, y: 0 }); // center in container px
+  const [imgRatio, setImgRatio] = useState(1);
+  const [teeRatio, setTeeRatio] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
 
-  // loading skeleton flags
   const [teeLoaded, setTeeLoaded] = useState(false);
   const [artLoaded, setArtLoaded] = useState(false);
 
-  // gesture bookkeeping
+  // NEW: saved print file URL from /api/print-file
+  const [printFileUrl, setPrintFileUrl] = useState<string | null>(null);
+  const [savingPrint, setSavingPrint] = useState(false);
+
   const modeRef = useRef<GestureMode>("none");
   const gesture = useRef({
     startX: 0,
@@ -128,16 +130,15 @@ export default function EditPage() {
   });
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
-  // quantity for pricing
   const [qty, setQty] = useState<number>(1);
 
-  /** ---------- Geometry ---------- */
+  /* ---------- Geometry ---------- */
   const containerW = containerRef.current?.clientWidth ?? 0;
   const containerH = containerRef.current?.clientHeight ?? 0;
 
   const safeRect = useMemo(() => {
-    const w = containerW,
-      h = containerH;
+    const w = containerW;
+    const h = containerH;
     return {
       x: 0.5 * w - 0.65 * w * 0.5,
       y: 0.34 * h - 0.45 * h * 0.5,
@@ -157,7 +158,7 @@ export default function EditPage() {
     [designWidthPx, imgRatio]
   );
 
-  /** ---------- Snap guides (position) ---------- */
+  /* ---------- Snap guides ---------- */
   const [vGuide, setVGuide] = useState<number | null>(null);
   const [hGuide, setHGuide] = useState<number | null>(null);
   const guideTimer = useRef<number | null>(null);
@@ -172,8 +173,8 @@ export default function EditPage() {
   };
 
   const applySnap = (x: number, y: number) => {
-    let snappedX = x;
-    let snappedY = y;
+    let sx = x;
+    let sy = y;
     let showV: number | null = null;
     let showH: number | null = null;
 
@@ -187,31 +188,31 @@ export default function EditPage() {
     const bottomY = safeRect.y + safeRect.h - halfH;
 
     if (Math.abs(x - centerX) <= SNAP) {
-      snappedX = centerX;
+      sx = centerX;
       showV = centerX;
     } else if (Math.abs(x - leftX) <= SNAP) {
-      snappedX = leftX;
+      sx = leftX;
       showV = safeRect.x;
     } else if (Math.abs(x - rightX) <= SNAP) {
-      snappedX = rightX;
+      sx = rightX;
       showV = safeRect.x + safeRect.w;
     }
 
     if (Math.abs(y - centerY) <= SNAP) {
-      snappedY = centerY;
+      sy = centerY;
       showH = centerY;
     } else if (Math.abs(y - topY) <= SNAP) {
-      snappedY = topY;
+      sy = topY;
       showH = safeRect.y;
     } else if (Math.abs(y - bottomY) <= SNAP) {
-      snappedY = bottomY;
+      sy = bottomY;
       showH = safeRect.y + safeRect.h;
     }
 
     setVGuide(showV);
     setHGuide(showH);
     if (showV || showH) clearGuidesSoon();
-    return { x: snappedX, y: snappedY };
+    return { x: sx, y: sy };
   };
 
   const clampCenterToSafe = (x: number, y: number) => {
@@ -245,12 +246,12 @@ export default function EditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designWidthPx, designHeightPx]);
 
-  /** ---------- Mockup selection ---------- */
+  /* ---------- Mockup src ---------- */
   const teeSrc = useMemo(() => {
     return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
   }, [side, color]);
 
-  /** ---------- Pointer utilities ---------- */
+  /* ---------- Pointer logic ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
     const rect = containerRef.current!.getBoundingClientRect();
     return {
@@ -258,11 +259,11 @@ export default function EditPage() {
       y: (e as PointerEvent).clientY - rect.top,
     };
   };
-  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
-  /** ---------- Drag/pinch on image ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -273,7 +274,8 @@ export default function EditPage() {
     pointers.current.set(e.pointerId, p);
   };
   const onDesignPointerMove = (e: React.PointerEvent) => {
-    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, getLocalXY(e));
+    if (pointers.current.has(e.pointerId))
+      pointers.current.set(e.pointerId, getLocalXY(e));
     if (modeRef.current === "drag") {
       const p = getLocalXY(e);
       setPos(clampCenterToSafe(p.x - gesture.current.startX, p.y - gesture.current.startY));
@@ -298,7 +300,7 @@ export default function EditPage() {
     if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  /** ---------- Scale via corner handles ---------- */
+  /* ---------- Scale/Rotate ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -320,9 +322,8 @@ export default function EditPage() {
     if (modeRef.current === "scale") modeRef.current = "none";
   };
 
-  /** ---------- Rotate via top handle (with Snap Angle) ---------- */
-  const SNAP_ANGLE = 15; // degrees
-  const MAGNET = 4; // degrees threshold
+  const SNAP_ANGLE = 15;
+  const MAGNET = 4;
 
   const onRotateHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -339,14 +340,12 @@ export default function EditPage() {
     const a = angleTo({ x: pos.x, y: pos.y }, p);
     const deltaDeg = deg(a - gesture.current.startAngle);
     let next = gesture.current.startRotation + deltaDeg;
-
     if (e.shiftKey) {
       next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
     } else {
       const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
       if (Math.abs(nearest - next) <= MAGNET) next = nearest;
     }
-
     next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
   };
@@ -355,7 +354,7 @@ export default function EditPage() {
     if (modeRef.current === "rotate") modeRef.current = "none";
   };
 
-  /** ---------- Wheel zoom (desktop) ---------- */
+  /* ---------- Wheel zoom ---------- */
   const onWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey) return;
     e.preventDefault();
@@ -364,9 +363,12 @@ export default function EditPage() {
     setScalePct(next);
   };
 
-  /** ---------- Keyboard nudge & undo/redo ---------- */
+  /* ---------- Undo/Redo ---------- */
   const isTextInput = (el: Element | null) =>
-    !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+    !!el &&
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      (el as HTMLElement).isContentEditable);
 
   const history = useRef<Snapshot[]>([]);
   const index = useRef<number>(-1);
@@ -421,13 +423,11 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
-  // initial snapshot
   useEffect(() => {
     pushHistory(capture());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // debounced snapshot on changes
   useEffect(() => {
     if (applyingHistory.current) return;
     if (debTimer.current) window.clearTimeout(debTimer.current);
@@ -453,43 +453,7 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isTextInput(document.activeElement)) return;
-
-      // Undo / Redo
-      const z = e.key.toLowerCase() === "z";
-      const y = e.key.toLowerCase() === "y";
-      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (y || (z && e.shiftKey))) {
-        e.preventDefault();
-        redo();
-        return;
-      }
-
-      // Nudge
-      let dx = 0,
-        dy = 0;
-      if (e.key === "ArrowLeft") dx = -1;
-      else if (e.key === "ArrowRight") dx = 1;
-      else if (e.key === "ArrowUp") dy = -1;
-      else if (e.key === "ArrowDown") dy = 1;
-      if (dx || dy) {
-        e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        setPos((p) => clampCenterToSafe(p.x + dx * step, p.y + dy * step));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clampCenterToSafe]);
-
-  /** ---------- Pricing ---------- */
+  /* ---------- Pricing ---------- */
   const unitPrice = useMemo(() => {
     const base = BASE_PRICE_MATERIAL[material] ?? 12;
     const colorFee = COLOR_SURCHARGE[color] ?? 0;
@@ -497,9 +461,12 @@ export default function EditPage() {
     return Math.max(0, base + colorFee + sizeFee);
   }, [material, color, size]);
 
-  const totalPrice = useMemo(() => +(unitPrice * Math.max(1, qty)).toFixed(2), [unitPrice, qty]);
+  const totalPrice = useMemo(
+    () => +(unitPrice * Math.max(1, qty)).toFixed(2),
+    [unitPrice, qty]
+  );
 
-  /** ---------- Download mockup JPG ---------- */
+  /* ---------- Download mockup JPG ---------- */
   const downloadJPG = async () => {
     try {
       if (!containerRef.current) return;
@@ -512,12 +479,9 @@ export default function EditPage() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.scale(dpr, dpr);
-
-      // white background
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W, H);
 
-      // draw tee mockup centered at 90% width
       const tee = new Image();
       tee.crossOrigin = "anonymous";
       tee.src = teeSrc;
@@ -531,7 +495,6 @@ export default function EditPage() {
       const teeY = (H - teeH) / 2;
       if (tee.complete) ctx.drawImage(tee, teeX, teeY, teeW, teeH);
 
-      // draw design with rotation/opacity
       const art = new Image();
       art.crossOrigin = "anonymous";
       art.src = chosenImage!;
@@ -556,53 +519,94 @@ export default function EditPage() {
       a.remove();
     } catch (e) {
       console.error(e);
-      alert("Could not export JPG (likely CORS from remote image). Try using an uploaded design, then Download again.");
+      alert("Could not export JPG.");
     }
   };
 
-  /** ---------- Advanced: Print-ready file save ---------- */
-  const [saving, setSaving] = useState(false);
-  const [printUrl, setPrintUrl] = useState<string | null>(null);
-  const [printErr, setPrintErr] = useState<string | null>(null);
+  /* ---------- Advanced: Save print file (URL) ---------- */
+  type SaveResp = {
+    url?: string;
+    pngUrl?: string;
+    publicUrl?: string;
+    file?: { url?: string };
+    error?: string;
+  };
 
-  const savePrintFile = async () => {
+  async function handleSavePrintFile() {
     try {
-      setSaving(true);
-      setPrintErr(null);
-      setPrintUrl(null);
+      if (!chosenImage) {
+        alert("No design image loaded.");
+        return;
+      }
+      setSavingPrint(true);
 
+      // Send JSON so req.json() doesn’t throw; include the design URL
       const res = await fetch("/api/print-file", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          // server renders the 3600x4800 PNG and returns a public URL
-          imageUrl: chosenImage, // data URL or remote URL is fine
-          side,
-          color,
-          size,
-          material,
-        }),
+        body: JSON.stringify({ imageUrl: chosenImage }),
       });
 
       if (!res.ok) {
         const txt = await res.text();
-        throw new Error(txt || `HTTP ${res.status}`);
+        setSavingPrint(false);
+        alert(`Print file failed: ${txt}`);
+        return;
       }
-      const json: { url: string } = await res.json();
-      setPrintUrl(json.url);
-      // optionally make it visible to checkout metadata if your flow reads it from localStorage
-      try {
-        localStorage.setItem("printFileUrl", json.url);
-      } catch {
-        /* ignore */
+
+      const data = (await res.json()) as SaveResp;
+      const url =
+        data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+
+      if (!url) {
+        setSavingPrint(false);
+        alert("Print file created but no URL returned.");
+        return;
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to save print file";
-      setPrintErr(msg);
-    } finally {
-      setSaving(false);
+
+      setPrintFileUrl(url);
+      setSavingPrint(false);
+    } catch (err: unknown) {
+      console.error(err);
+      setSavingPrint(false);
+      alert(`Error creating print file: ${String(err)}`);
     }
-  };
+  }
+
+  /* ---------- Proceed to payment (Stripe) ---------- */
+  async function handleCheckout() {
+    if (!printFileUrl) {
+      alert('Please open Advanced and click "Save print file (URL)" first.');
+      return;
+    }
+
+    const payload = {
+      side,
+      color,
+      size,
+      material,
+      qty,
+      unitPriceGBP: unitPrice,
+      totalPriceGBP: totalPrice,
+      printFileUrl, // goes into Stripe metadata -> webhook -> Printful
+    };
+
+    const res = await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      alert("Checkout failed.");
+      return;
+    }
+    const j = (await res.json()) as { url?: string; error?: string };
+    if (j.url) {
+      window.location.href = j.url;
+    } else {
+      alert(j.error || "Checkout failed.");
+    }
+  }
 
   if (!chosenImage) {
     return (
@@ -626,14 +630,13 @@ export default function EditPage() {
       <Stepper current={2} />
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        {/* Canvas card */}
+        {/* Canvas */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div
             ref={containerRef}
             onWheel={onWheel}
             className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
           >
-            {/* Loading skeleton overlay */}
             {!allLoaded && (
               <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
                 <div className="animate-pulse rounded-xl bg-zinc-200 p-6 text-sm text-zinc-600">
@@ -642,7 +645,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* Mockup PNG */}
             <img
               ref={teeImgRef}
               src={teeSrc}
@@ -657,18 +659,21 @@ export default function EditPage() {
               className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none"
             />
 
-            {/* Safe area */}
             <div className="pointer-events-none absolute left-1/2 top-[34%] h-[45%] w-[65%] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-dashed border-black/10" />
 
-            {/* Snap guides */}
             {vGuide !== null && (
-              <div className="pointer-events-none absolute top-0 h-full w-px bg-black/20" style={{ left: vGuide }} />
+              <div
+                className="pointer-events-none absolute top-0 h-full w-px bg-black/20"
+                style={{ left: vGuide }}
+              />
             )}
             {hGuide !== null && (
-              <div className="pointer-events-none absolute left-0 w-full border-t border-black/20" style={{ top: hGuide }} />
+              <div
+                className="pointer-events-none absolute left-0 w-full border-t border-black/20"
+                style={{ top: hGuide }}
+              />
             )}
 
-            {/* Design wrapper */}
             <div
               className="absolute"
               style={{
@@ -680,13 +685,12 @@ export default function EditPage() {
                 touchAction: "none",
               }}
             >
-              {/* Design image */}
               <img
                 src={chosenImage}
                 alt="Design"
                 onLoad={(e) => {
                   setArtLoaded(true);
-                  const i = e.currentTarget as HTMLImageElement;
+                  const i = e.currentTarget;
                   setImgRatio(i.naturalHeight / i.naturalWidth || 1);
                   centerDesign();
                 }}
@@ -699,10 +703,8 @@ export default function EditPage() {
                 style={{ opacity: opacity / 100 }}
               />
 
-              {/* bounding box */}
               <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
 
-              {/* corner scale handles */}
               {[
                 { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
                 { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
@@ -719,7 +721,6 @@ export default function EditPage() {
                 />
               ))}
 
-              {/* rotate handle */}
               <div
                 onPointerDown={onRotateHandleDown}
                 onPointerMove={onRotateHandleMove}
@@ -731,31 +732,36 @@ export default function EditPage() {
           </div>
         </div>
 
-        {/* Control panel */}
+        {/* Controls */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Adjust & Options</h2>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
+              <Button variant="outline" onClick={undo} disabled={!canUndo}>
                 Undo
               </Button>
-              <Button variant="outline" onClick={redo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z)">
+              <Button variant="outline" onClick={redo} disabled={!canRedo}>
                 Redo
               </Button>
-              <Button variant="outline" onClick={downloadJPG} title="Download mockup as JPG">
-                Download mockup JPG
+              <Button variant="outline" onClick={downloadJPG}>
+                Mockup JPG
               </Button>
             </div>
           </div>
 
-          {/* Sliders */}
           <div className="grid gap-5">
             <div>
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="text-zinc-600">Scale</span>
                 <span className="tabular-nums text-zinc-500">{scalePct}%</span>
               </div>
-              <Slider value={[scalePct]} min={10} max={200} step={1} onValueChange={(v) => setScalePct(v[0] ?? scalePct)} />
+              <Slider
+                value={[scalePct]}
+                min={10}
+                max={200}
+                step={1}
+                onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
+              />
             </div>
 
             <div>
@@ -763,7 +769,13 @@ export default function EditPage() {
                 <span className="text-zinc-600">Rotation</span>
                 <span className="tabular-nums text-zinc-500">{rotationDeg}°</span>
               </div>
-              <Slider value={[rotationDeg]} min={-45} max={45} step={1} onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)} />
+              <Slider
+                value={[rotationDeg]}
+                min={-45}
+                max={45}
+                step={1}
+                onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
+              />
             </div>
 
             <div>
@@ -771,13 +783,17 @@ export default function EditPage() {
                 <span className="text-zinc-600">Opacity</span>
                 <span className="tabular-nums text-zinc-500">{opacity}%</span>
               </div>
-              <Slider value={[opacity]} min={10} max={100} step={1} onValueChange={(v) => setOpacity(v[0] ?? opacity)} />
+              <Slider
+                value={[opacity]}
+                min={10}
+                max={100}
+                step={1}
+                onValueChange={(v) => setOpacity(v[0] ?? opacity)}
+              />
             </div>
           </div>
 
-          {/* Segmented options */}
           <div className="mt-6 grid gap-4">
-            {/* Side */}
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Side</span>
               <div className="flex gap-2">
@@ -795,7 +811,6 @@ export default function EditPage() {
               </div>
             </div>
 
-            {/* Color */}
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Color</span>
               <div className="flex gap-2">
@@ -811,7 +826,7 @@ export default function EditPage() {
                     <span
                       className="inline-block h-4 w-4 rounded-full border"
                       style={{
-                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#000080" /* heather */,
+                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#000080",
                         borderColor: c === "white" ? "#e5e7eb" : "transparent",
                       }}
                     />
@@ -821,7 +836,6 @@ export default function EditPage() {
               </div>
             </div>
 
-            {/* Size */}
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Size</span>
               <div className="flex flex-wrap gap-2">
@@ -839,7 +853,6 @@ export default function EditPage() {
               </div>
             </div>
 
-            {/* Material */}
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Material</span>
               <div className="flex flex-wrap gap-2">
@@ -857,7 +870,6 @@ export default function EditPage() {
               </div>
             </div>
 
-            {/* Quantity */}
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Quantity</span>
               <div className="flex items-center gap-2">
@@ -869,6 +881,27 @@ export default function EditPage() {
                   +
                 </Button>
               </div>
+            </div>
+          </div>
+
+          {/* Advanced */}
+          <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-medium">Advanced</span>
+              <div className="text-xs text-zinc-500">
+                {printFileUrl ? (
+                  <a href={printFileUrl} className="underline" target="_blank" rel="noreferrer">
+                    Print file saved
+                  </a>
+                ) : (
+                  "No print file saved"
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleSavePrintFile} disabled={savingPrint}>
+                {savingPrint ? "Saving…" : "Save print file (URL)"}
+              </Button>
             </div>
           </div>
 
@@ -920,61 +953,12 @@ export default function EditPage() {
               </Button>
               <Button
                 className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
-                onClick={() => {
-                  alert(
-                    [
-                      `Side: ${side}`,
-                      `Color: ${color}`,
-                      `Size: ${size}`,
-                      `Material: ${material}`,
-                      `Qty: ${qty}`,
-                      `Unit: ${gbp.format(unitPrice)}`,
-                      `Total: ${gbp.format(totalPrice)}`,
-                    ].join("\n")
-                  );
-                }}
+                onClick={handleCheckout}
+                title={printFileUrl ? "" : "Save a print file first (Advanced section)"}
               >
                 Proceed to payment →
               </Button>
             </div>
-          </div>
-
-          {/* ---------- Advanced (hidden) ---------- */}
-          <div className="mt-8">
-            <details className="rounded-xl border bg-white p-4">
-              <summary className="cursor-pointer select-none text-sm font-medium">
-                Advanced (print-ready file)
-              </summary>
-              <div className="mt-3 space-y-3 text-sm text-zinc-700">
-                <p>
-                  Save a 3600×4800 transparent PNG of your design (server-rendered) for POD. This stores a public URL
-                  you can pass to fulfillment.
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button onClick={savePrintFile} disabled={saving}>
-                    {saving ? "Saving…" : "Save print file"}
-                  </Button>
-                  {saving && <Dots />}
-                </div>
-                {printUrl && (
-                  <div className="rounded-lg border bg-zinc-50 p-3">
-                    <div className="font-medium">Saved:</div>
-                    <div className="truncate text-xs">{printUrl}</div>
-                    <div className="mt-2">
-                      <a
-                        className="text-xs underline"
-                        href={printUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open file
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {printErr && <div className="text-red-600">{printErr}</div>}
-              </div>
-            </details>
           </div>
         </div>
       </div>
