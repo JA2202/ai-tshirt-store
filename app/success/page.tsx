@@ -13,12 +13,19 @@ function money(pence?: number | null, currency = "gbp") {
   }).format(pence / 100);
 }
 
+type SearchParams = Record<string, string | string[] | undefined>;
+
 export default async function SuccessPage({
   searchParams,
 }: {
-  searchParams: { session_id?: string };
+  // ✅ On your Next version, searchParams is a Promise
+  searchParams: Promise<SearchParams>;
 }) {
-  const sessionId = searchParams.session_id;
+  const sp = await searchParams;
+  const raw = sp.session_id;
+  const sessionId =
+    typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+
   let session: Stripe.Checkout.Session | null = null;
 
   if (sessionId && process.env.STRIPE_SECRET_KEY) {
@@ -28,7 +35,7 @@ export default async function SuccessPage({
     });
   }
 
-  const m = session?.metadata || {};
+  const m = (session?.metadata || {}) as Record<string, string>;
   const email = session?.customer_details?.email || "";
   const total = money(session?.amount_total, session?.currency || "gbp");
 
@@ -53,23 +60,23 @@ export default async function SuccessPage({
             <dl className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <dt>Side</dt>
-                <dd>{(m.side as string) || "—"}</dd>
+                <dd>{m.side || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Colour</dt>
-                <dd>{(m.color as string) || "—"}</dd>
+                <dd>{m.color || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Size</dt>
-                <dd>{(m.size as string) || "—"}</dd>
+                <dd>{m.size || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Material</dt>
-                <dd>{(m.material as string) || "—"}</dd>
+                <dd>{m.material || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Quantity</dt>
-                <dd>{(m.qty as string) || "—"}</dd>
+                <dd>{m.qty || "—"}</dd>
               </div>
               <div className="mt-2 h-px bg-zinc-200" />
               <div className="flex items-center justify-between">
@@ -84,18 +91,20 @@ export default async function SuccessPage({
             {m.printFileUrl ? (
               <a
                 className="inline-block rounded-lg border bg-white px-3 py-2 text-sm text-blue-600 underline hover:bg-zinc-50"
-                href={m.printFileUrl as string}
+                href={m.printFileUrl}
                 target="_blank"
                 rel="noreferrer"
               >
                 Download print file (PNG)
               </a>
             ) : (
-              <p className="text-sm text-zinc-600">Print file will be attached to your order.</p>
+              <p className="text-sm text-zinc-600">
+                Print file will be attached to your order.
+              </p>
             )}
             {m.prompt ? (
               <p className="mt-3 text-xs text-zinc-500">
-                Prompt: <span className="italic">{m.prompt as string}</span>
+                Prompt: <span className="italic">{m.prompt}</span>
               </p>
             ) : null}
           </div>
