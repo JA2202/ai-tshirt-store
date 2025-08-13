@@ -29,7 +29,7 @@ export type PFV2Layer = {
 };
 
 export type PFV2Placement = {
-  placement: "front" | "back"; // classic DTG tees accept these
+  placement: "front" | "back"; // DTG tees: front/back
   technique: "dtg";
   layers: PFV2Layer[];
 };
@@ -75,7 +75,6 @@ async function pfFetchV2<T>(path: string, init: RequestInit): Promise<T> {
       }`
     );
   }
-  // v2 wraps payloads in { data: ... }
   const obj = data as { data: T };
   return obj.data ?? (data as T);
 }
@@ -89,29 +88,30 @@ export async function createDraftOrderV2(body: PFV2OrderCreate) {
 }
 
 /* ------------------ Variant map (replace with YOUR catalog ids) ------------------ */
-export type ColorKey = "white" | "black" | "heather";
+export type ColorKey = "white" | "black" | "navy";
 export type SizeKey = "XS" | "S" | "M" | "L" | "XL" | "XXL";
 export type MaterialKey = "standard" | "eco" | "premium";
 
 /**
  * IMPORTANT: Fill these with real Printful catalog variant_ids you listed
  * via /products/{id}.variants (e.g., 11547 for Gildan 5000 Black / M).
- */
+*/
+
 const VARIANTS: Record<MaterialKey, Record<ColorKey, Record<SizeKey, number>>> = {
   standard: {
-    white:  { XS: 11576, S: 11576, M: 11577, L: 11578, XL: 11579, XXL: 11580 }, // <- EXAMPLES: REPLACE!
-    black:  { XS: 11546, S: 11546, M: 11547, L: 11548, XL: 11549, XXL: 11550 },
-    heather:{ XS: 21683, S: 21683, M: 21684, L: 21685, XL: 21686, XXL: 21688 },
+    white:  { XS: 0, S: 11576, M: 11577, L: 11578, XL: 11579, XXL: 11580 }, // example placeholders
+    black:  { XS: 0, S: 11546, M: 11547, L: 11548, XL: 11549, XXL: 11550 }, // example placeholders
+    navy:   { XS: 0, S: 11561, M: 11562, L: 11563, XL: 11564, XXL: 11565 }, // <-- YOUR real Navy ids
   },
   eco: {
-    white:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },     // fill with real ids
+    white:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },     // fill with real ids if you add eco tees
     black:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
-    heather:{ XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+    navy:   { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
   },
   premium: {
     white:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
     black:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
-    heather:{ XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+    navy:   { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
   },
 };
 

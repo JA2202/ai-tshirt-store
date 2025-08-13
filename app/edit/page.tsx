@@ -8,7 +8,7 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-/** ---------- Pricing (unchanged except color list) ---------- */
+/** ---------- Pricing (same as before; using heather) ---------- */
 const COLORS: Color[] = ["white", "black", "navy"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
@@ -21,7 +21,7 @@ const BASE_PRICE_MATERIAL: Record<Material, number> = {
 const COLOR_SURCHARGE: Record<Color, number> = {
   white: 0,
   black: 1,
-  navy: 0.5, // adjust if you want a different surcharge
+  navy: 0.5,
 };
 const SIZE_SURCHARGE: Record<string, number> = {
   XS: 0,
@@ -38,7 +38,7 @@ const gbp = new Intl.NumberFormat("en-GB", {
   maximumFractionDigits: 2,
 });
 
-/** ---------- Mockup PNG map (side + color) ---------- */
+/** ---------- Mockup map (heather back in) ---------- */
 const TEE_MAP: Record<Side, Record<Color, string>> = {
   front: {
     white: "/mockups/tee_white_front.png",
@@ -187,19 +187,25 @@ export default function EditPage() {
     const bottomY = safeRect.y + safeRect.h - halfH;
 
     if (Math.abs(x - centerX) <= SNAP) {
-      snappedX = centerX; showV = centerX;
+      snappedX = centerX;
+      showV = centerX;
     } else if (Math.abs(x - leftX) <= SNAP) {
-      snappedX = leftX; showV = safeRect.x;
+      snappedX = leftX;
+      showV = safeRect.x;
     } else if (Math.abs(x - rightX) <= SNAP) {
-      snappedX = rightX; showV = safeRect.x + safeRect.w;
+      snappedX = rightX;
+      showV = safeRect.x + safeRect.w;
     }
 
     if (Math.abs(y - centerY) <= SNAP) {
-      snappedY = centerY; showH = centerY;
+      snappedY = centerY;
+      showH = centerY;
     } else if (Math.abs(y - topY) <= SNAP) {
-      snappedY = topY; showH = safeRect.y;
+      snappedY = topY;
+      showH = safeRect.y;
     } else if (Math.abs(y - bottomY) <= SNAP) {
-      snappedY = bottomY; showH = safeRect.y + safeRect.h;
+      snappedY = bottomY;
+      showH = safeRect.y + safeRect.h;
     }
 
     setVGuide(showV);
@@ -247,10 +253,12 @@ export default function EditPage() {
   /** ---------- Pointer utilities ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
     const rect = containerRef.current!.getBoundingClientRect();
-    return { x: (e as PointerEvent).clientX - rect.left, y: (e as PointerEvent).clientY - rect.top };
+    return {
+      x: (e as PointerEvent).clientX - rect.left,
+      y: (e as PointerEvent).clientY - rect.top,
+    };
   };
-  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
-    Math.hypot(a.x - b.x, a.y - b.y);
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
@@ -290,7 +298,7 @@ export default function EditPage() {
     if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  /** ---------- Scale handle ---------- */
+  /** ---------- Scale via corner handles ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -312,9 +320,9 @@ export default function EditPage() {
     if (modeRef.current === "scale") modeRef.current = "none";
   };
 
-  /** ---------- Rotate handle (with snap) ---------- */
-  const SNAP_ANGLE = 15;
-  const MAGNET = 4;
+  /** ---------- Rotate via top handle (with Snap Angle) ---------- */
+  const SNAP_ANGLE = 15; // degrees
+  const MAGNET = 4; // degrees threshold
 
   const onRotateHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -358,10 +366,7 @@ export default function EditPage() {
 
   /** ---------- Keyboard nudge & undo/redo ---------- */
   const isTextInput = (el: Element | null) =>
-    !!el &&
-    (el.tagName === "INPUT" ||
-      el.tagName === "TEXTAREA" ||
-      (el as HTMLElement).isContentEditable);
+    !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
 
   const history = useRef<Snapshot[]>([]);
   const index = useRef<number>(-1);
@@ -416,11 +421,13 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
+  // initial snapshot
   useEffect(() => {
     pushHistory(capture());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // debounced snapshot on changes
   useEffect(() => {
     if (applyingHistory.current) return;
     if (debTimer.current) window.clearTimeout(debTimer.current);
@@ -451,13 +458,14 @@ export default function EditPage() {
       if (isTextInput(document.activeElement)) return;
 
       // Undo / Redo
-      const k = e.key.toLowerCase();
-      if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) {
+      const z = e.key.toLowerCase() === "z";
+      const y = e.key.toLowerCase() === "y";
+      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
         e.preventDefault();
         undo();
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) {
+      if ((e.ctrlKey || e.metaKey) && (y || (z && e.shiftKey))) {
         e.preventDefault();
         redo();
         return;
@@ -489,10 +497,7 @@ export default function EditPage() {
     return Math.max(0, base + colorFee + sizeFee);
   }, [material, color, size]);
 
-  const totalPrice = useMemo(
-    () => +(unitPrice * Math.max(1, qty)).toFixed(2),
-    [unitPrice, qty]
-  );
+  const totalPrice = useMemo(() => +(unitPrice * Math.max(1, qty)).toFixed(2), [unitPrice, qty]);
 
   /** ---------- Download mockup JPG ---------- */
   const downloadJPG = async () => {
@@ -512,7 +517,7 @@ export default function EditPage() {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W, H);
 
-      // draw tee mockup
+      // draw tee mockup centered at 90% width
       const tee = new Image();
       tee.crossOrigin = "anonymous";
       tee.src = teeSrc;
@@ -555,6 +560,50 @@ export default function EditPage() {
     }
   };
 
+  /** ---------- Advanced: Print-ready file save ---------- */
+  const [saving, setSaving] = useState(false);
+  const [printUrl, setPrintUrl] = useState<string | null>(null);
+  const [printErr, setPrintErr] = useState<string | null>(null);
+
+  const savePrintFile = async () => {
+    try {
+      setSaving(true);
+      setPrintErr(null);
+      setPrintUrl(null);
+
+      const res = await fetch("/api/print-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          // server renders the 3600x4800 PNG and returns a public URL
+          imageUrl: chosenImage, // data URL or remote URL is fine
+          side,
+          color,
+          size,
+          material,
+        }),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      const json: { url: string } = await res.json();
+      setPrintUrl(json.url);
+      // optionally make it visible to checkout metadata if your flow reads it from localStorage
+      try {
+        localStorage.setItem("printFileUrl", json.url);
+      } catch {
+        /* ignore */
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save print file";
+      setPrintErr(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!chosenImage) {
     return (
       <>
@@ -584,6 +633,7 @@ export default function EditPage() {
             onWheel={onWheel}
             className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
           >
+            {/* Loading skeleton overlay */}
             {!allLoaded && (
               <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
                 <div className="animate-pulse rounded-xl bg-zinc-200 p-6 text-sm text-zinc-600">
@@ -630,6 +680,7 @@ export default function EditPage() {
                 touchAction: "none",
               }}
             >
+              {/* Design image */}
               <img
                 src={chosenImage}
                 alt="Design"
@@ -760,7 +811,7 @@ export default function EditPage() {
                     <span
                       className="inline-block h-4 w-4 rounded-full border"
                       style={{
-                        background: c === "white" ? "#ffffff" : c === "black" ? "#111111" : "#1f2a44" /* navy */,
+                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#000080" /* heather */,
                         borderColor: c === "white" ? "#e5e7eb" : "transparent",
                       }}
                     />
@@ -886,6 +937,44 @@ export default function EditPage() {
                 Proceed to payment →
               </Button>
             </div>
+          </div>
+
+          {/* ---------- Advanced (hidden) ---------- */}
+          <div className="mt-8">
+            <details className="rounded-xl border bg-white p-4">
+              <summary className="cursor-pointer select-none text-sm font-medium">
+                Advanced (print-ready file)
+              </summary>
+              <div className="mt-3 space-y-3 text-sm text-zinc-700">
+                <p>
+                  Save a 3600×4800 transparent PNG of your design (server-rendered) for POD. This stores a public URL
+                  you can pass to fulfillment.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button onClick={savePrintFile} disabled={saving}>
+                    {saving ? "Saving…" : "Save print file"}
+                  </Button>
+                  {saving && <Dots />}
+                </div>
+                {printUrl && (
+                  <div className="rounded-lg border bg-zinc-50 p-3">
+                    <div className="font-medium">Saved:</div>
+                    <div className="truncate text-xs">{printUrl}</div>
+                    <div className="mt-2">
+                      <a
+                        className="text-xs underline"
+                        href={printUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open file
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {printErr && <div className="text-red-600">{printErr}</div>}
+              </div>
+            </details>
           </div>
         </div>
       </div>
