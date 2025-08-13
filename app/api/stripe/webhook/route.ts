@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import {
-  createDraftOrder,
+  createDraftOrderV2,
   resolveVariantId,
   type PFRecipient,
   type ColorKey,
@@ -40,9 +40,8 @@ type ShippingDetailsLite = {
   address?: ShipAddress | null;
 };
 
-/** Safely read (non-expandable) session.shipping_details when present. */
+/** Read possible session.shipping_details (varies by API versions). */
 function readSessionShipping(session: Stripe.Checkout.Session): ShippingDetailsLite | null {
-  // Types for shipping_details vary across API versions; read via a narrow adapter
   const s = session as unknown as { shipping_details?: ShippingDetailsLite | null };
   const ship = s.shipping_details ?? null;
   if (!ship) return null;
@@ -62,7 +61,7 @@ function readSessionShipping(session: Stripe.Checkout.Session): ShippingDetailsL
   };
 }
 
-/** Map Stripe.PaymentIntent.shipping → our lite type. */
+/** Map PaymentIntent.shipping to our lite type. */
 function mapPIShipping(pi: Stripe.PaymentIntent | null): ShippingDetailsLite | null {
   if (!pi?.shipping) return null;
   const sh = pi.shipping;
@@ -82,7 +81,7 @@ function mapPIShipping(pi: Stripe.PaymentIntent | null): ShippingDetailsLite | n
   };
 }
 
-/** Build a Printful recipient from shipping + customer details. */
+/** Build Printful recipient from shipping + customer details. */
 function buildRecipient(opts: {
   ship: ShippingDetailsLite | null;
   customer: Stripe.Checkout.Session.CustomerDetails | null | undefined;
@@ -112,8 +111,11 @@ function buildRecipient(opts: {
   return out;
 }
 
+function isHttpUrl(u: string | undefined): u is string {
+  return !!u && (u.startsWith("http://") || u.startsWith("https://"));
+}
+
 export async function POST(req: Request) {
-  // Stripe needs the raw text for signature verification
   const payload = await req.text();
   const sig = req.headers.get("stripe-signature");
 
@@ -130,16 +132,13 @@ export async function POST(req: Request) {
     if (event.type === "checkout.session.completed") {
       const data = event.data.object as Stripe.Checkout.Session;
 
-      // Do NOT expand `shipping_details` (it isn't expandable).
-      // Expand only what is safe/useful.
+      // Expand safe fields; `shipping_details` is not expandable.
       const full = await stripe.checkout.sessions.retrieve(data.id, {
         expand: ["customer_details", "payment_intent"],
       });
 
-      // 1) Try session.shipping_details (when present on your API version)
+      // 1) Try session.shipping_details; 2) else PaymentIntent.shipping
       let ship: ShippingDetailsLite | null = readSessionShipping(full);
-
-      // 2) If missing, read from PaymentIntent.shipping
       if (!ship) {
         let pi: Stripe.PaymentIntent | null = null;
         if (typeof full.payment_intent === "string") {
@@ -152,10 +151,9 @@ export async function POST(req: Request) {
 
       const recipient = buildRecipient({
         ship,
-        customer: full.customer_details, // typed by Stripe SDK
+        customer: full.customer_details,
       });
 
-      // Read your metadata written at checkout creation
       const md = full.metadata ?? {};
       const printFileUrl = asString(md.printFileUrl);
       const side = (asString(md.side) ?? "front") as "front" | "back";
@@ -164,8 +162,8 @@ export async function POST(req: Request) {
       const material = (asString(md.material) ?? "standard") as MaterialKey;
       const qty = Math.max(1, Number(md.qty ?? "1"));
 
-      if (!printFileUrl) {
-        console.warn("No printFileUrl in session metadata; skipping Printful order.");
+      if (!isHttpUrl(printFileUrl)) {
+        console.warn("No valid printFileUrl in session metadata; skipping Printful order.");
         return new NextResponse("ok", { status: 200 });
       }
       if (!recipient) {
@@ -173,33 +171,36 @@ export async function POST(req: Request) {
         return new NextResponse("ok", { status: 200 });
       }
 
-      // Resolve catalog variant id and create a Printful draft order
       const variantId = resolveVariantId(material, color, size);
 
-      const res = await createDraftOrder({
+      // Create a DRAFT order in Printful v2 (DTG, front/back)
+      const order = await createDraftOrderV2({
         external_id: `stripe_${full.id}`,
         recipient,
-        items: [
+        retail_costs: { currency: "GBP" },
+        order_items: [
           {
+            source: "catalog",
+            catalog_variant_id: variantId,
             quantity: qty,
-            variant_id: variantId,
-            files: [
-              { url: printFileUrl, type: "default", position: side },
-              { url: printFileUrl, type: "preview", position: side },
+            placements: [
+              {
+                placement: side, // "front" | "back"
+                technique: "dtg",
+                layers: [{ type: "file", url: printFileUrl }],
+              },
             ],
           },
         ],
-        confirm: false,
-        retail_costs: { currency: "GBP" },
       });
 
-      console.log("✅ Printful draft order created:", JSON.stringify(res));
+      console.log("✅ Printful v2 draft order created:", JSON.stringify(order));
     }
 
-    // Always 200 so Stripe doesn't retry forever
     return new NextResponse("ok", { status: 200 });
   } catch (err) {
     console.error("❌ Error in webhook handler:", err);
+    // Return 200 so Stripe doesn't retry forever; you still get logs for debugging
     return new NextResponse("ok", { status: 200 });
   }
 }

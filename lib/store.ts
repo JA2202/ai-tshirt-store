@@ -3,7 +3,7 @@
 import { create } from "zustand";
 
 export type Side = "front" | "back";
-export type Color = "white" | "black" | "heather";
+export type Color = "white" | "black" | "navy";
 export type Material = "standard" | "eco" | "premium";
 
 type DesignStore = {
