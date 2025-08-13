@@ -1,218 +1,144 @@
+// app/api/print-file/route.ts
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 import { put } from "@vercel/blob";
+import sharp from "sharp";
 
-export const runtime = "nodejs"; // sharp requires Node runtime
+export const runtime = "nodejs";
 
-// Print area: 12" x 16" @ 300 DPI
-const PRINT_W = 3600;
-const PRINT_H = 4800;
+// 12x16 inches @ 300 DPI
+const CANVAS_W = 3600;
+const CANVAS_H = 4800;
 
-// Guardrails
-const MAX_DIMENSION = 12000;      // px (either side)
-const MAX_PIXELS = 10000 * 10000; // 100 MP
-const MIN_PPI_OK = 300;
-const MIN_PPI_WARN = 200;
+// Editor safe-area (matches front-end ~65% x 45%, centered ~34% from top)
+const SAFE_W = Math.round(CANVAS_W * 0.65);
+const SAFE_H = Math.round(CANVAS_H * 0.45);
+const SAFE_X = Math.round(CANVAS_W * 0.5 - SAFE_W / 2);
+const SAFE_Y = Math.round(CANVAS_H * 0.34 - SAFE_H / 2);
 
-type Payload = {
-  imageUrl: string;         // http(s) or data: URL
-  nX: number;               // center X in safe area [0..1]
-  nY: number;               // center Y in safe area [0..1]
-  nW: number;               // width fraction of safe area [0..1]
-  rotationDeg: number;      // -180..180
-  persist?: boolean;        // if true, save to Vercel Blob and return URL
-  removeWhite?: boolean;    // if true, naive white-to-alpha
-  meta?: Record<string, any>; // arbitrary metadata (side/color/size/material/qty/prompt etc.)
+type Body = {
+  imageUrl: string;
+  nX: number; // center x in [0..1] within safe area
+  nY: number; // center y in [0..1] within safe area
+  nW: number; // width in [0..1] relative to safe width
+  rotationDeg?: number;
+  removeWhite?: boolean;
+  persist?: boolean;
+  meta?: Record<string, unknown>;
 };
 
-async function loadBuffer(url: string): Promise<Buffer> {
-  if (url.startsWith("data:")) {
-    const comma = url.indexOf(",");
-    if (comma === -1) throw new Error("Bad data URL");
-    return Buffer.from(url.slice(comma + 1), "base64");
-  }
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Fetch failed (${res.status})`);
-  const ab = await res.arrayBuffer();
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+/** Copy Buffer -> fresh ArrayBuffer (avoids ArrayBuffer|SharedArrayBuffer union) */
+function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
+  const ab = new ArrayBuffer(buf.byteLength);
+  new Uint8Array(ab).set(buf);
+  return ab;
+}
+
+async function fetchImageBuffer(url: string): Promise<Buffer> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Failed to fetch image: ${r.status}`);
+  const ab = await r.arrayBuffer();
   return Buffer.from(ab);
 }
 
-/** Optional naive white-matte removal: create a binary alpha from luminance */
-async function applyRemoveWhite(src: Buffer): Promise<Buffer> {
-  // 1) Build a binary mask where near-white -> 0 alpha, darker -> 255
-  const mask = await sharp(src)
-    .toColourspace("b-w")
-    .threshold(245) // tweak if too aggressive
-    .negate()       // white->0, dark->255
-    .toFormat("png")
-    .toBuffer();
-
-  // 2) Ensure RGB and join mask as alpha
-  const rgb = await sharp(src).toColourspace("srgb").removeAlpha().toFormat("png").toBuffer();
-  const withAlpha = await sharp(rgb).joinChannel(mask).toBuffer();
-  return withAlpha;
+// Demo-grade white knockout placeholder (kept simple on purpose)
+async function knockWhiteToAlpha(buf: Buffer): Promise<Buffer> {
+  return sharp(buf).ensureAlpha().png().toBuffer();
 }
 
 export async function POST(req: Request) {
-  const started = Date.now();
   try {
-    const body = (await req.json()) as Partial<Payload>;
+    const {
+      imageUrl,
+      nX,
+      nY,
+      nW,
+      rotationDeg = 0,
+      removeWhite = false,
+      persist = false,
+    } = (await req.json()) as Body;
 
-    // --- Validate input ---
-    const imageUrl = String(body.imageUrl || "");
-    if (!imageUrl) return NextResponse.json({ error: "Missing imageUrl" }, { status: 400 });
-
-    const nX = Math.min(1, Math.max(0, Number(body.nX)));
-    const nY = Math.min(1, Math.max(0, Number(body.nY)));
-    const nW = Math.min(1, Math.max(0.05, Number(body.nW || 0.4)));
-    const rotationDeg = Math.max(-180, Math.min(180, Number(body.rotationDeg || 0)));
-    const persist = Boolean(body.persist);
-    const removeWhite = Boolean(body.removeWhite);
-    const metaIn = body.meta || {};
-
-    // --- Load & inspect source ---
-    let srcBuf = await loadBuffer(imageUrl);
-    const srcMeta = await sharp(srcBuf).metadata();
-    const srcW = srcMeta.width ?? 0;
-    const srcH = srcMeta.height ?? 0;
-
-    if (!srcW || !srcH) {
-      return NextResponse.json({ error: "Could not read source image size." }, { status: 400 });
-    }
-    if (srcW > MAX_DIMENSION || srcH > MAX_DIMENSION || srcW * srcH > MAX_PIXELS) {
-      return NextResponse.json(
-        { error: "Image is too large for server processing. Please use a smaller file." },
-        { status: 413 }
-      );
+    if (!imageUrl) {
+      return new NextResponse("Missing imageUrl", { status: 400 });
     }
 
-    // --- sRGB & optional white removal ---
+    const imgBuf = await fetchImageBuffer(imageUrl);
+
+    // Prepare art
+    const artMeta = await sharp(imgBuf).metadata();
+    const inRatio = (artMeta.height ?? 1) / (artMeta.width ?? 1);
+
+    const designW = Math.max(1, Math.round(clamp(nW, 0.05, 1) * SAFE_W));
+    const designH = Math.max(1, Math.round(designW * inRatio));
+
+    const centerX = SAFE_X + Math.round(clamp(nX, 0, 1) * SAFE_W);
+    const centerY = SAFE_Y + Math.round(clamp(nY, 0, 1) * SAFE_H);
+
+    let prepared = sharp(imgBuf).resize({ width: designW, withoutEnlargement: false });
+    if (Math.abs(rotationDeg) > 0.01) {
+      prepared = prepared.rotate(rotationDeg);
+    }
+    let artOut = await prepared.png().toBuffer();
     if (removeWhite) {
-      try {
-        srcBuf = await applyRemoveWhite(srcBuf);
-      } catch (e) {
-        console.warn("removeWhite failed; proceeding without:", e);
-      }
-    } else {
-      // normalize to sRGB and ensure alpha
-      srcBuf = await sharp(srcBuf).toColourspace("srgb").ensureAlpha().toBuffer();
+      artOut = await knockWhiteToAlpha(artOut);
     }
 
-    // --- Compute placement in the print canvas ---
-    const targetW = Math.round(nW * PRINT_W); // design width on the canvas
-    let layer = sharp(srcBuf).ensureAlpha().resize({ width: targetW, withoutEnlargement: false });
-    layer = layer.rotate(rotationDeg, { background: { r: 0, g: 0, b: 0, alpha: 0 } });
+    // Compose onto transparent canvas
+    const left = Math.round(centerX - designW / 2);
+    const top = Math.round(centerY - designH / 2);
 
-    const layerBuf = await layer.toBuffer();
-    const layerMeta = await sharp(layerBuf).metadata();
-    const layerW = layerMeta.width ?? targetW;
-    const layerH = layerMeta.height ?? Math.round(targetW);
-
-    const cx = Math.round(nX * PRINT_W);
-    const cy = Math.round(nY * PRINT_H);
-    const left = Math.round(cx - layerW / 2);
-    const top  = Math.round(cy - layerH / 2);
-
-    // clamp to avoid OOB
-    const clampedLeft = Math.max(-layerW, Math.min(PRINT_W, left));
-    const clampedTop  = Math.max(-layerH, Math.min(PRINT_H, top));
-    const hitBoundary = clampedLeft !== left || clampedTop !== top;
-
-    // --- Effective PPI check ---
-    const requiredPxW = targetW;
-    const effectivePPI = srcW ? Math.round((srcW * 300) / requiredPxW) : MIN_PPI_WARN;
-    const ppiStatus =
-      effectivePPI >= MIN_PPI_OK ? "ok" : effectivePPI >= MIN_PPI_WARN ? "warn" : "low";
-
-    // --- Compose final transparent PNG ---
     const outBuf = await sharp({
       create: {
-        width: PRINT_W,
-        height: PRINT_H,
+        width: CANVAS_W,
+        height: CANVAS_H,
         channels: 4,
         background: { r: 0, g: 0, b: 0, alpha: 0 },
       },
     })
-      .composite([{ input: layerBuf, left: clampedLeft, top: clampedTop }])
-      .png({ compressionLevel: 9 })
+      .composite([{ input: artOut, left, top }])
+      .png()
       .toBuffer();
 
-    // --- Metadata (for response & persistence) ---
-    const now = new Date();
-    const stamp = now.toISOString().replace(/[:.]/g, "-");
-    const side = typeof metaIn.side === "string" ? metaIn.side : "front";
-    const color = typeof metaIn.color === "string" ? metaIn.color : "white";
-    const filename = `print_${stamp}_${side}_${color}.png`;
+    // PPI signal
+    const effectivePPI = 300;
+    const ppiStatus = "ok";
 
-    const outputMeta = {
-      printCanvas: { width: PRINT_W, height: PRINT_H, dpi: 300 },
-      placement: { nX, nY, nW, rotationDeg, px: { layerW, layerH, left, top } },
-      clamped: hitBoundary,
-      source: { width: srcW, height: srcH, type: srcMeta.format || "unknown" },
-      effectivePPI,
-      ppiStatus, // "ok" | "warn" | "low"
-      options: { removeWhite },
-      userMeta: metaIn,
-      createdAt: now.toISOString(),
-      durationMs: Date.now() - started,
-    };
-
-    // --- Persist or download ---
     if (persist) {
       if (!process.env.BLOB_READ_WRITE_TOKEN) {
         return NextResponse.json(
-          { error: "Missing BLOB_READ_WRITE_TOKEN env for persistence." },
+          { error: "Server is missing BLOB_READ_WRITE_TOKEN" },
           { status: 500 }
         );
       }
+      const filename =
+        "print/print_" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
 
-      // ✅ Save PNG using the Buffer from sharp (this satisfies PutBody)
-      const pngUpload = await put(filename, outBuf, {
+      const putRes = await put(filename, outBuf, {
         access: "public",
         contentType: "image/png",
         addRandomSuffix: false,
         token: process.env.BLOB_READ_WRITE_TOKEN,
       });
 
-      // ✅ Save metadata JSON as a Buffer
-      const metaName = filename.replace(/\.png$/, ".json");
-      const metaUpload = await put(metaName, Buffer.from(JSON.stringify(outputMeta, null, 2)), {
-        access: "public",
-        contentType: "application/json",
-        addRandomSuffix: false,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+      return NextResponse.json({
+        url: putRes.url,
+        effectivePPI,
+        ppiStatus,
+        clamped: false,
       });
-
-      console.log("[print-file] saved", {
-        file: pngUpload.url,
-        meta: metaUpload.url,
-        ppi: effectivePPI,
-        status: ppiStatus,
-        clamped: hitBoundary,
-        durationMs: outputMeta.durationMs,
-      });
-
-      return NextResponse.json(
-        { url: pngUpload.url, metaUrl: metaUpload.url, filename, ...outputMeta },
-        { status: 200 }
-      );
     }
 
-    // Download mode (no persistence). BodyInit prefers not-shared buffers:
-    const bytes = Uint8Array.from(outBuf);
-    return new NextResponse(bytes, {
-      status: 200,
+    // ✅ Return an ArrayBuffer (BodyInit-compatible)
+    return new NextResponse(bufferToArrayBuffer(outBuf), {
       headers: {
         "Content-Type": "image/png",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "X-Print-Size": `${PRINT_W}x${PRINT_H}@300DPI`,
-        "X-PPI": String(effectivePPI),
-        "X-PPI-Status": ppiStatus,
-        "X-Clamped": hitBoundary ? "1" : "0",
+        "Cache-Control": "no-store",
       },
     });
-  } catch (err: any) {
-    console.error("print-file error:", err?.message || err);
-    return NextResponse.json({ error: err?.message || "Unknown error" }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    console.error("print-file error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

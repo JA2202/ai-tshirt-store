@@ -8,10 +8,8 @@ type Material = "standard" | "eco" | "premium";
 type Color = "white" | "black" | "heather";
 type Side = "front" | "back";
 
-// Convert GBP to pence for Stripe
 const toPence = (gbp: number) => Math.max(0, Math.round(gbp * 100));
 
-// Pricing tables (mirror client)
 const BASE_PRICE_MATERIAL: Record<Material, number> = {
   standard: 12,
   eco: 14,
@@ -42,7 +40,7 @@ function siteBase(req: Request) {
   return (
     process.env.NEXT_PUBLIC_SITE_URL ||
     req.headers.get("origin") ||
-    "https://ai-tshirt-store.vercel.app/"
+    "http://localhost:3000"
   );
 }
 
@@ -55,7 +53,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Payload from the editor page
     const {
       imageUrl,
       nX,
@@ -68,7 +65,7 @@ export async function POST(req: Request) {
       size,
       material,
       qty,
-      printFileUrl, // optional (if user pressed "Save print file" earlier)
+      printFileUrl,
       prompt,
     }: {
       imageUrl?: string;
@@ -91,7 +88,7 @@ export async function POST(req: Request) {
     const unitPence = toPence(unitGBP);
     const baseUrl = siteBase(req);
 
-    // Ensure we have a persisted print-ready file URL to attach to the order
+    // Ensure a persisted print file URL
     let finalPrintUrl = printFileUrl || "";
     let ppiStatus = "";
     let effectivePPI = 0;
@@ -113,32 +110,33 @@ export async function POST(req: Request) {
           nW,
           rotationDeg,
           removeWhite,
-          persist: true, // save to Blob so the URL survives after checkout
+          persist: true,
           meta: { side, color, size, material, qty: quantity, prompt },
         }),
       });
-      const pf = await pfRes.json();
-      if (!pfRes.ok) {
+      const pf = (await pfRes.json()) as {
+        url?: string;
+        ppiStatus?: string;
+        effectivePPI?: number;
+        error?: string;
+      };
+      if (!pfRes.ok || !pf.url) {
         return NextResponse.json(
           { error: pf?.error || "Failed to create print file" },
           { status: 500 }
         );
       }
-      finalPrintUrl = pf.url as string;
-      ppiStatus = pf.ppiStatus as string;
-      effectivePPI = pf.effectivePPI as number;
+      finalPrintUrl = pf.url;
+      ppiStatus = pf.ppiStatus || "";
+      effectivePPI = pf.effectivePPI ?? 0;
     }
 
-    // Stripe client (use account's default API version)
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
-    // Create Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
-
-      // ✅ NEW: always create (or attach) a Customer record for this checkout
-      customer_creation: "always",
+      customer_creation: "always", // create/attach a Stripe Customer
 
       line_items: [
         {
@@ -172,11 +170,10 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ url: session.url }, { status: 200 });
-  } catch (err: any) {
-    console.error("checkout error:", err?.message || err);
-    return NextResponse.json(
-      { error: err?.message || "Unknown error" },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+    console.error("checkout error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

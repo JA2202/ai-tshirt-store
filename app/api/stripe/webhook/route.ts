@@ -12,7 +12,6 @@ export async function POST(req: Request) {
     return new NextResponse("Webhook misconfigured", { status: 500 });
   }
 
-  // Read raw body for signature verification
   const rawBody = await req.text();
   const sig = req.headers.get("stripe-signature");
   if (!sig) return new NextResponse("Missing signature", { status: 400 });
@@ -22,16 +21,15 @@ export async function POST(req: Request) {
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, sig, secret);
-  } catch (err: any) {
-    console.error("⚠️ Webhook signature verification failed:", err?.message);
-    return new NextResponse(`Bad signature: ${err?.message}`, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "invalid signature";
+    console.error("⚠️  Webhook signature verification failed:", message);
+    return new NextResponse(`Bad signature: ${message}`, { status: 400 });
   }
 
   try {
     if (event.type === "checkout.session.completed") {
       const sessionId = (event.data.object as Stripe.Checkout.Session).id;
-
-      // Get full session (include line items & customer)
       const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ["line_items", "customer"],
       });
@@ -39,7 +37,7 @@ export async function POST(req: Request) {
       const order = {
         id: session.id,
         payment_status: session.payment_status,
-        amount_total: session.amount_total, // pence
+        amount_total: session.amount_total,
         currency: session.currency,
         customer_email: session.customer_details?.email ?? null,
         customer_name: session.customer_details?.name ?? null,
@@ -53,29 +51,26 @@ export async function POST(req: Request) {
         createdAt: new Date().toISOString(),
       };
 
-      // Persist a simple order record to Blob (demo-friendly)
       if (process.env.BLOB_READ_WRITE_TOKEN) {
         const file =
           `orders/order_${new Date().toISOString().replace(/[:.]/g, "-")}_${session.id}.json`;
 
-        await put(
-          file,
-          JSON.stringify(order, null, 2), // pass a string (no Buffer needed)
-          {
-            access: "public",          // ← matches current @vercel/blob types
-            contentType: "application/json",
-            addRandomSuffix: true,     // ← make URL hard to guess
-            token: process.env.BLOB_READ_WRITE_TOKEN,
-          }
-        );
+        await put(file, JSON.stringify(order, null, 2), {
+          access: "public",        // demo-friendly
+          contentType: "application/json",
+          addRandomSuffix: true,   // make URL hard to guess
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
       } else {
         console.log("[order]", order);
       }
     }
 
     return NextResponse.json({ received: true });
-  } catch (err: any) {
-    console.error("Webhook handler error:", err?.message || err);
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Webhook handler error";
+    console.error("Webhook handler error:", message);
     return new NextResponse("Webhook handler error", { status: 500 });
   }
 }
