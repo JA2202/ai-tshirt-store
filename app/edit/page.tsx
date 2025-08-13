@@ -8,7 +8,7 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-/** ---------- Pricing ---------- */
+/* ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "heather"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
@@ -38,7 +38,7 @@ const gbp = new Intl.NumberFormat("en-GB", {
   maximumFractionDigits: 2,
 });
 
-/** ---------- Mockups ---------- */
+/* ---------- Mockups (side+color) ---------- */
 const TEE_MAP: Record<Side, Record<Color, string>> = {
   front: {
     white: "/mockups/tee_white_front.png",
@@ -53,12 +53,14 @@ const TEE_MAP: Record<Side, Record<Color, string>> = {
 };
 const TEE_FALLBACK = "/tee.png";
 
-/** ---------- Helpers ---------- */
-const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+/* ---------- Helpers ---------- */
+const clamp = (v: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v));
 const rad = (deg: number) => (deg * Math.PI) / 180;
-const deg = (rad: number) => (rad * 180) / Math.PI;
+const deg = (r: number) => (r * 180) / Math.PI;
 
 type GestureMode = "none" | "drag" | "scale" | "rotate" | "pinch";
+
 type Snapshot = {
   x: number;
   y: number;
@@ -71,7 +73,7 @@ type Snapshot = {
   material: Material;
 };
 
-// progress dots
+/* tiny loading dots */
 function Dots() {
   return (
     <span className="inline-flex items-center gap-1">
@@ -100,7 +102,7 @@ export default function EditPage() {
     if (!chosenImage) router.replace("/generate");
   }, [chosenImage, router]);
 
-  /** ---------- Editor state ---------- */
+  /* ---------- Editor state ---------- */
   const containerRef = useRef<HTMLDivElement | null>(null);
   const teeImgRef = useRef<HTMLImageElement | null>(null);
 
@@ -111,20 +113,13 @@ export default function EditPage() {
   const [teeRatio, setTeeRatio] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
 
-  // print export options (advanced)
-  const [removeWhite, setRemoveWhite] = useState(false);
-  const [savedUrl, setSavedUrl] = useState<string | null>(null);
-  const [saveInfo, setSaveInfo] = useState<{ ppi?: number; ppiStatus?: string; clamped?: boolean } | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // checkout state
-  const [checkingOut, setCheckingOut] = useState(false);
-
-  // loading skeleton flags
   const [teeLoaded, setTeeLoaded] = useState(false);
   const [artLoaded, setArtLoaded] = useState(false);
 
-  // gesture bookkeeping
+  // NEW: holds the saved PNG URL returned by /api/print-file
+  const [printFileUrl, setPrintFileUrl] = useState<string | null>(null);
+  const [savingPrint, setSavingPrint] = useState(false);
+
   const modeRef = useRef<GestureMode>("none");
   const gesture = useRef({
     startX: 0,
@@ -136,16 +131,15 @@ export default function EditPage() {
   });
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
-  // quantity
   const [qty, setQty] = useState<number>(1);
 
-  /** ---------- Geometry ---------- */
+  /* ---------- Geometry ---------- */
   const containerW = containerRef.current?.clientWidth ?? 0;
   const containerH = containerRef.current?.clientHeight ?? 0;
 
   const safeRect = useMemo(() => {
-    const w = containerW,
-      h = containerH;
+    const w = containerW;
+    const h = containerH;
     return {
       x: 0.5 * w - 0.65 * w * 0.5,
       y: 0.34 * h - 0.45 * h * 0.5,
@@ -165,7 +159,7 @@ export default function EditPage() {
     [designWidthPx, imgRatio]
   );
 
-  /** ---------- Snap guides ---------- */
+  /* ---------- Snap guides ---------- */
   const [vGuide, setVGuide] = useState<number | null>(null);
   const [hGuide, setHGuide] = useState<number | null>(null);
   const guideTimer = useRef<number | null>(null);
@@ -180,8 +174,8 @@ export default function EditPage() {
   };
 
   const applySnap = (x: number, y: number) => {
-    let snappedX = x;
-    let snappedY = y;
+    let sx = x;
+    let sy = y;
     let showV: number | null = null;
     let showH: number | null = null;
 
@@ -195,31 +189,31 @@ export default function EditPage() {
     const bottomY = safeRect.y + safeRect.h - halfH;
 
     if (Math.abs(x - centerX) <= SNAP) {
-      snappedX = centerX;
+      sx = centerX;
       showV = centerX;
     } else if (Math.abs(x - leftX) <= SNAP) {
-      snappedX = leftX;
+      sx = leftX;
       showV = safeRect.x;
     } else if (Math.abs(x - rightX) <= SNAP) {
-      snappedX = rightX;
+      sx = rightX;
       showV = safeRect.x + safeRect.w;
     }
 
     if (Math.abs(y - centerY) <= SNAP) {
-      snappedY = centerY;
+      sy = centerY;
       showH = centerY;
     } else if (Math.abs(y - topY) <= SNAP) {
-      snappedY = topY;
+      sy = topY;
       showH = safeRect.y;
     } else if (Math.abs(y - bottomY) <= SNAP) {
-      snappedY = bottomY;
+      sy = bottomY;
       showH = safeRect.y + safeRect.h;
     }
 
     setVGuide(showV);
     setHGuide(showH);
     if (showV || showH) clearGuidesSoon();
-    return { x: snappedX, y: snappedY };
+    return { x: sx, y: sy };
   };
 
   const clampCenterToSafe = (x: number, y: number) => {
@@ -242,7 +236,7 @@ export default function EditPage() {
 
   useEffect(() => {
     centerDesign();
-    const onResize = () => setPos((p) => clampCenterToSafe(p.x, p.y));
+    const onResize = () => centerDesign();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,29 +247,25 @@ export default function EditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designWidthPx, designHeightPx]);
 
-  /** ---------- Mockup src ---------- */
+  /* ---------- Mockup src ---------- */
   const teeSrc = useMemo(() => {
     return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
   }, [side, color]);
 
-  /** ---------- Pointer utils ---------- */
+  /* ---------- Pointer utils ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
-    const el = containerRef.current;
-    if (!el) return { x: 0, y: 0 };
-    const rect = el.getBoundingClientRect();
-    return { x: (e as PointerEvent).clientX - rect.left, y: (e as PointerEvent).clientY - rect.top };
+    const rect = containerRef.current!.getBoundingClientRect();
+    return {
+      x: (e as PointerEvent).clientX - rect.left,
+      y: (e as PointerEvent).clientY - rect.top,
+    };
   };
   const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
     Math.hypot(a.x - b.x, a.y - b.y);
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
-  const endPointer = (e: React.PointerEvent) => {
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-    pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2) modeRef.current = "none";
-  };
-
+  /* ---------- Drag image ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -286,7 +276,8 @@ export default function EditPage() {
     pointers.current.set(e.pointerId, p);
   };
   const onDesignPointerMove = (e: React.PointerEvent) => {
-    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, getLocalXY(e));
+    if (pointers.current.has(e.pointerId))
+      pointers.current.set(e.pointerId, getLocalXY(e));
     if (modeRef.current === "drag") {
       const p = getLocalXY(e);
       setPos(clampCenterToSafe(p.x - gesture.current.startX, p.y - gesture.current.startY));
@@ -304,12 +295,14 @@ export default function EditPage() {
       }
     }
   };
-  const onDesignPointerUp = (e: React.PointerEvent) => endPointer(e);
-  const onDesignPointerCancel = (e: React.PointerEvent) => endPointer(e);
-  const onDesignPointerLeave = (e: React.PointerEvent) => {
-    if (modeRef.current !== "none") endPointer(e);
+  const onDesignPointerUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2 && modeRef.current === "pinch") modeRef.current = "none";
+    if (modeRef.current === "drag") modeRef.current = "none";
   };
 
+  /* ---------- Scale via handles ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -326,11 +319,15 @@ export default function EditPage() {
     const next = clamp(Math.round(gesture.current.startScale * f), 10, 200);
     setScalePct(next);
   };
-  const onScaleHandleUp = (e: React.PointerEvent) => endPointer(e);
-  const onScaleHandleCancel = (e: React.PointerEvent) => endPointer(e);
+  const onScaleHandleUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (modeRef.current === "scale") modeRef.current = "none";
+  };
 
+  /* ---------- Rotate w/ snap ---------- */
   const SNAP_ANGLE = 15;
   const MAGNET = 4;
+
   const onRotateHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -346,18 +343,21 @@ export default function EditPage() {
     const a = angleTo({ x: pos.x, y: pos.y }, p);
     const deltaDeg = deg(a - gesture.current.startAngle);
     let next = gesture.current.startRotation + deltaDeg;
-    if (e.shiftKey) next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
-    else {
+    if (e.shiftKey) {
+      next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+    } else {
       const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
       if (Math.abs(nearest - next) <= MAGNET) next = nearest;
     }
     next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
   };
-  const onRotateHandleUp = (e: React.PointerEvent) => endPointer(e);
-  const onRotateHandleCancel = (e: React.PointerEvent) => endPointer(e);
+  const onRotateHandleUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (modeRef.current === "rotate") modeRef.current = "none";
+  };
 
-  /** ---------- Wheel zoom ---------- */
+  /* ---------- Wheel zoom ---------- */
   const onWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey) return;
     e.preventDefault();
@@ -366,7 +366,7 @@ export default function EditPage() {
     setScalePct(next);
   };
 
-  /** ---------- Keyboard nudge & undo/redo ---------- */
+  /* ---------- Undo/Redo ---------- */
   const isTextInput = (el: Element | null) =>
     !!el &&
     (el.tagName === "INPUT" ||
@@ -456,53 +456,20 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // ✅ don’t hijack keys while typing
-      if (isTextInput(document.activeElement)) return;
-
-      // Undo / Redo
-      const z = e.key.toLowerCase() === "z";
-      const y = e.key.toLowerCase() === "y";
-      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (y || (z && e.shiftKey))) {
-        e.preventDefault();
-        redo();
-        return;
-      }
-
-      // Nudge
-      let dx = 0,
-        dy = 0;
-      if (e.key === "ArrowLeft") dx = -1;
-      else if (e.key === "ArrowRight") dx = 1;
-      else if (e.key === "ArrowUp") dy = -1;
-      else if (e.key === "ArrowDown") dy = 1;
-      if (dx || dy) {
-        e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        setPos((p) => clampCenterToSafe(p.x + dx * step, p.y + dy * step));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** ---------- Pricing ---------- */
+  /* ---------- Pricing ---------- */
   const unitPrice = useMemo(() => {
     const base = BASE_PRICE_MATERIAL[material] ?? 12;
     const colorFee = COLOR_SURCHARGE[color] ?? 0;
     const sizeFee = SIZE_SURCHARGE[size] ?? 0;
     return Math.max(0, base + colorFee + sizeFee);
   }, [material, color, size]);
-  const totalPrice = useMemo(() => +(unitPrice * Math.max(1, qty)).toFixed(2), [unitPrice, qty]);
 
-  /** ---------- Mockup JPG ---------- */
+  const totalPrice = useMemo(
+    () => +(unitPrice * Math.max(1, qty)).toFixed(2),
+    [unitPrice, qty]
+  );
+
+  /* ---------- Download mockup JPG ---------- */
   const downloadJPG = async () => {
     try {
       if (!containerRef.current) return;
@@ -515,7 +482,6 @@ export default function EditPage() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.scale(dpr, dpr);
-
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W, H);
 
@@ -554,140 +520,80 @@ export default function EditPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-    } catch (e: unknown) {
-      const message =
-        e instanceof Error ? e.message : "Could not export JPG (likely CORS). Try an uploaded design.";
+    } catch (e) {
       console.error(e);
-      alert(message);
+      alert("Could not export JPG.");
     }
   };
 
-  /** ---------- Print-ready (download) ---------- */
-  const downloadPrintPNG = async () => {
+  /* ---------- Advanced: Save print file (URL) ---------- */
+  type SaveResp = {
+    url?: string;
+    pngUrl?: string;
+    publicUrl?: string;
+    file?: { url?: string };
+  };
+
+  async function handleSavePrintFile() {
     try {
-      if (!chosenImage || !safeRect.w || !safeRect.h) return;
-      const nX = clamp((pos.x - safeRect.x) / safeRect.w, 0, 1);
-      const nY = clamp((pos.y - safeRect.y) / safeRect.h, 0, 1);
-      const nW = clamp(designWidthPx / safeRect.w, 0.05, 1);
-
-      const res = await fetch("/api/print-file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: chosenImage,
-          nX,
-          nY,
-          nW,
-          rotationDeg,
-          removeWhite,
-          meta: { side, color, size, material, qty },
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "print-ready.png";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e: unknown) {
-      const message =
-        e instanceof Error ? e.message : "Could not generate print-ready file.";
-      console.error(e);
-      alert(message);
+      setSavingPrint(true);
+      const res = await fetch("/api/print-file", { method: "POST" });
+      if (!res.ok) {
+        setSavingPrint(false);
+        alert("Could not create print file");
+        return;
+      }
+      const data = (await res.json()) as SaveResp;
+      const url =
+        data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+      if (!url) {
+        setSavingPrint(false);
+        alert("Print file created but no URL returned.");
+        return;
+      }
+      setPrintFileUrl(url);
+      setSavingPrint(false);
+    } catch (err) {
+      console.error(err);
+      setSavingPrint(false);
+      alert("Error creating print file.");
     }
-  };
+  }
 
-  /** ---------- Save print file (persist to Blob) ---------- */
-  const savePrintFile = async () => {
-    try {
-      if (!chosenImage || !safeRect.w || !safeRect.h) return;
-      setSaving(true);
-      setSaveInfo(null);
-      setSavedUrl(null);
-
-      const nX = clamp((pos.x - safeRect.x) / safeRect.w, 0, 1);
-      const nY = clamp((pos.y - safeRect.y) / safeRect.h, 0, 1);
-      const nW = clamp(designWidthPx / safeRect.w, 0.05, 1);
-
-      const res = await fetch("/api/print-file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: chosenImage,
-          nX,
-          nY,
-          nW,
-          rotationDeg,
-          removeWhite,
-          persist: true,
-          meta: { side, color, size, material, qty },
-        }),
-      });
-      const data = (await res.json()) as {
-        url?: string;
-        effectivePPI?: number;
-        ppiStatus?: string;
-        clamped?: boolean;
-        error?: string;
-      };
-      if (!res.ok || !data.url) throw new Error(data?.error || "Upload failed");
-
-      setSavedUrl(data.url);
-      setSaveInfo({
-        ppi: data.effectivePPI,
-        ppiStatus: data.ppiStatus,
-        clamped: data.clamped,
-      });
-    } catch (e: unknown) {
-      const message =
-        e instanceof Error ? e.message : "Could not save file. Check server logs and Blob token.";
-      alert(message);
-    } finally {
-      setSaving(false);
+  /* ---------- Proceed to payment (Stripe) ---------- */
+  async function handleCheckout() {
+    if (!printFileUrl) {
+      alert("Please open Advanced and click “Save print file (URL)” first.");
+      return;
     }
-  };
 
-  /** ---------- Proceed to payment (Stripe Checkout) ---------- */
-  const proceedToPayment = async () => {
-    try {
-      if (!chosenImage || !safeRect.w || !safeRect.h) return;
-      setCheckingOut(true);
+    const payload = {
+      side,
+      color,
+      size,
+      material,
+      qty,
+      unitPriceGBP: unitPrice,
+      totalPriceGBP: totalPrice,
+      printFileUrl, // crucial: goes into Stripe metadata
+    };
 
-      const nX = clamp((pos.x - safeRect.x) / safeRect.w, 0, 1);
-      const nY = clamp((pos.y - safeRect.y) / safeRect.h, 0, 1);
-      const nW = clamp(designWidthPx / safeRect.w, 0.05, 1);
-
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: chosenImage,
-          nX,
-          nY,
-          nW,
-          rotationDeg,
-          removeWhite,
-          side,
-          color,
-          size,
-          material,
-          qty,
-        }),
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) throw new Error(data?.error || "Checkout failed");
-      window.location.href = data.url;
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Could not start checkout.";
-      alert(message);
-    } finally {
-      setCheckingOut(false);
+    const res = await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      alert("Checkout failed.");
+      return;
     }
-  };
+    const j = (await res.json()) as { url?: string; error?: string };
+    if (j.url) {
+      window.location.href = j.url;
+    } else {
+      alert(j.error || "Checkout failed.");
+    }
+  }
 
   if (!chosenImage) {
     return (
@@ -706,115 +612,17 @@ export default function EditPage() {
 
   const allLoaded = teeLoaded && artLoaded;
 
-  const Options = () => (
-    <div className="grid gap-4">
-      {/* Side */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="w-20 text-sm text-zinc-600">Side</span>
-        <div className="flex gap-2">
-          {(["front", "back"] as Side[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setSide(s)}
-              className={`rounded-lg px-3 py-2 text-sm transition ${
-                s === side ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Color */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="w-20 text-sm text-zinc-600">Color</span>
-        <div className="flex gap-2">
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              onClick={() => setColor(c)}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
-                color === c ? "ring-2 ring-black" : ""
-              }`}
-              title={c}
-            >
-              <span
-                className="inline-block h-4 w-4 rounded-full border"
-                style={{
-                  background: c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
-                  borderColor: c === "white" ? "#e5e7eb" : "transparent",
-                }}
-              />
-              {c}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Size */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="w-20 text-sm text-zinc-600">Size</span>
-        <div className="flex flex-wrap gap-2">
-          {SIZES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setSize(s)}
-              className={`rounded-lg px-3 py-2 text-sm transition ${
-                size === s ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Material */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="w-20 text-sm text-zinc-600">Material</span>
-        <div className="flex flex-wrap gap-2">
-          {MATERIALS.map((m) => (
-            <button
-              key={m}
-              onClick={() => setMaterial(m)}
-              className={`rounded-lg px-3 py-2 text-sm transition ${
-                material === m ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-              }`}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Quantity */}
-      <div className="flex items-center gap-3">
-        <span className="w-20 text-sm text-zinc-600">Quantity</span>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
-            −
-          </Button>
-          <span className="w-10 text-center tabular-nums">{qty}</span>
-          <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
-            +
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <>
       <Stepper current={2} />
 
-      <div className="grid gap-6 pb-24 md:pb-0 lg:grid-cols-[1.1fr_0.9fr]">
-        {/* Canvas card */}
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        {/* Canvas */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div
             ref={containerRef}
             onWheel={onWheel}
-            className="relative mx-auto aspect-[3/4] w-full max-w-xl min-h-[60vh] overflow-hidden overscroll-contain rounded-2xl border bg-white touch-none"
+            className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
           >
             {!allLoaded && (
               <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
@@ -824,7 +632,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* Mockup PNG */}
             <img
               ref={teeImgRef}
               src={teeSrc}
@@ -839,18 +646,21 @@ export default function EditPage() {
               className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none"
             />
 
-            {/* Safe area */}
             <div className="pointer-events-none absolute left-1/2 top-[34%] h-[45%] w-[65%] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-dashed border-black/10" />
 
-            {/* Snap guides */}
             {vGuide !== null && (
-              <div className="pointer-events-none absolute top-0 h-full w-px bg-black/20" style={{ left: vGuide }} />
+              <div
+                className="pointer-events-none absolute top-0 h-full w-px bg-black/20"
+                style={{ left: vGuide }}
+              />
             )}
             {hGuide !== null && (
-              <div className="pointer-events-none absolute left-0 w-full border-t border-black/20" style={{ top: hGuide }} />
+              <div
+                className="pointer-events-none absolute left-0 w-full border-t border-black/20"
+                style={{ top: hGuide }}
+              />
             )}
 
-            {/* Design wrapper */}
             <div
               className="absolute"
               style={{
@@ -863,7 +673,7 @@ export default function EditPage() {
               }}
             >
               <img
-                src={chosenImage!}
+                src={chosenImage}
                 alt="Design"
                 onLoad={(e) => {
                   setArtLoaded(true);
@@ -876,16 +686,12 @@ export default function EditPage() {
                 onPointerDown={onDesignPointerDown}
                 onPointerMove={onDesignPointerMove}
                 onPointerUp={onDesignPointerUp}
-                onPointerCancel={onDesignPointerCancel}
-                onPointerLeave={onDesignPointerLeave}
                 className="h-full w-full select-none cursor-move rounded-sm shadow-sm"
                 style={{ opacity: opacity / 100 }}
               />
 
-              {/* bounding box */}
               <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
 
-              {/* corner handles */}
               {[
                 { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
                 { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
@@ -897,50 +703,52 @@ export default function EditPage() {
                   onPointerDown={onScaleHandleDown}
                   onPointerMove={onScaleHandleMove}
                   onPointerUp={onScaleHandleUp}
-                  onPointerCancel={onScaleHandleCancel}
-                  className={`absolute ${h.style} z-10 h-6 w-6 md:h-4 md:w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
+                  className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
                   title="Drag to scale"
                 />
               ))}
 
-              {/* rotate handle */}
               <div
                 onPointerDown={onRotateHandleDown}
                 onPointerMove={onRotateHandleMove}
                 onPointerUp={onRotateHandleUp}
-                onPointerCancel={onRotateHandleCancel}
-                className="absolute left-1/2 top-0 z-10 h-5 w-5 md:h-3 md:w-3 -translate-x-1/2 -translate-y-7 md:-translate-y-6 cursor-grab rounded-full border border-white bg-black"
+                className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
                 title="Drag to rotate (hold Shift to snap)"
               />
             </div>
           </div>
         </div>
 
-        {/* Control panel */}
+        {/* Side panel */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Adjust & Options</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={undo} disabled={!canUndo}>
                 Undo
               </Button>
-              <Button variant="outline" onClick={redo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z)">
+              <Button variant="outline" onClick={redo} disabled={!canRedo}>
                 Redo
               </Button>
-              <Button variant="outline" onClick={downloadJPG} title="Download mockup as JPG">
+              <Button variant="outline" onClick={downloadJPG}>
                 Mockup JPG
               </Button>
             </div>
           </div>
 
-          {/* Sliders */}
           <div className="grid gap-5">
             <div>
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="text-zinc-600">Scale</span>
                 <span className="tabular-nums text-zinc-500">{scalePct}%</span>
               </div>
-              <Slider value={[scalePct]} min={10} max={200} step={1} onValueChange={(v) => setScalePct(v[0] ?? scalePct)} />
+              <Slider
+                value={[scalePct]}
+                min={10}
+                max={200}
+                step={1}
+                onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
+              />
             </div>
 
             <div>
@@ -948,7 +756,13 @@ export default function EditPage() {
                 <span className="text-zinc-600">Rotation</span>
                 <span className="tabular-nums text-zinc-500">{rotationDeg}°</span>
               </div>
-              <Slider value={[rotationDeg]} min={-45} max={45} step={1} onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)} />
+              <Slider
+                value={[rotationDeg]}
+                min={-45}
+                max={45}
+                step={1}
+                onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
+              />
             </div>
 
             <div>
@@ -956,25 +770,126 @@ export default function EditPage() {
                 <span className="text-zinc-600">Opacity</span>
                 <span className="tabular-nums text-zinc-500">{opacity}%</span>
               </div>
-              <Slider value={[opacity]} min={10} max={100} step={1} onValueChange={(v) => setOpacity(v[0] ?? opacity)} />
+              <Slider
+                value={[opacity]}
+                min={10}
+                max={100}
+                step={1}
+                onValueChange={(v) => setOpacity(v[0] ?? opacity)}
+              />
             </div>
           </div>
 
-          {/* Tee options */}
-          <div className="mt-6">
-            <details className="md:hidden rounded-xl border">
-              <summary className="cursor-pointer list-none rounded-xl px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">Tee options</span>
-                  <span className="text-sm text-zinc-500">Side, Colour, Size, Material, Qty</span>
-                </div>
-              </summary>
-              <div className="border-t p-4">
-                <Options />
+          {/* Segmented picks */}
+          <div className="mt-6 grid gap-4">
+            <div className="flex items-center gap-3">
+              <span className="w-20 text-sm text-zinc-600">Side</span>
+              <div className="flex gap-2">
+                {(["front", "back"] as Side[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSide(s)}
+                    className={`rounded-lg px-3 py-2 text-sm transition ${
+                      s === side ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
-            </details>
-            <div className="hidden md:block">
-              <Options />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="w-20 text-sm text-zinc-600">Color</span>
+              <div className="flex gap-2">
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
+                      color === c ? "ring-2 ring-black" : ""
+                    }`}
+                    title={c}
+                  >
+                    <span
+                      className="inline-block h-4 w-4 rounded-full border"
+                      style={{
+                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#d7d9de",
+                        borderColor: c === "white" ? "#e5e7eb" : "transparent",
+                      }}
+                    />
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="w-20 text-sm text-zinc-600">Size</span>
+              <div className="flex flex-wrap gap-2">
+                {SIZES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSize(s)}
+                    className={`rounded-lg px-3 py-2 text-sm transition ${
+                      size === s ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="w-20 text-sm text-zinc-600">Material</span>
+              <div className="flex flex-wrap gap-2">
+                {MATERIALS.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMaterial(m)}
+                    className={`rounded-lg px-3 py-2 text-sm transition ${
+                      material === m ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="w-20 text-sm text-zinc-600">Quantity</span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
+                  −
+                </Button>
+                <span className="w-10 text-center tabular-nums">{qty}</span>
+                <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
+                  +
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Advanced (collapsed content was added earlier in your build; keeping simple here) */}
+          <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-medium">Advanced</span>
+              <div className="text-xs text-zinc-500">
+                {printFileUrl ? (
+                  <a href={printFileUrl} className="underline" target="_blank" rel="noreferrer">
+                    Print file saved
+                  </a>
+                ) : (
+                  "No print file saved"
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleSavePrintFile} disabled={savingPrint}>
+                {savingPrint ? "Saving…" : "Save print file (URL)"}
+              </Button>
             </div>
           </div>
 
@@ -1008,11 +923,11 @@ export default function EditPage() {
           </div>
 
           {/* Footer actions */}
-          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 flex items-center justify-between">
             <Link href="/generate" className="text-sm text-zinc-600 underline">
               ← Back to Generate
             </Link>
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1021,83 +936,18 @@ export default function EditPage() {
                   setOpacity(100);
                   centerDesign();
                 }}
-                className="w-full sm:w-auto"
               >
                 Reset
               </Button>
               <Button
-                className="w-full sm:w-auto rounded-xl bg-black px-6 text-white hover:bg-zinc-900 disabled:opacity-60"
-                onClick={proceedToPayment}
-                disabled={checkingOut}
+                className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
+                onClick={handleCheckout}
+                title={printFileUrl ? "" : "Save a print file first (Advanced section)"}
               >
-                {checkingOut ? "Starting checkout…" : "Proceed to payment →"}
+                Proceed to payment →
               </Button>
             </div>
           </div>
-
-          {/* --- ADVANCED (printer tools) — collapsed --- */}
-          <details className="mt-8 rounded-xl border bg-white/80">
-            <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm text-zinc-600 hover:text-zinc-800">
-              Advanced (printer tools)
-            </summary>
-            <div className="border-t p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={removeWhite}
-                    onChange={(e) => setRemoveWhite(e.target.checked)}
-                  />
-                  Remove white background (alpha)
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={downloadPrintPNG}>Print-ready PNG</Button>
-                  <Button variant="outline" onClick={savePrintFile} disabled={saving}>
-                    {saving ? "Saving…" : "Save print file (URL)"}
-                  </Button>
-                </div>
-              </div>
-
-              {savedUrl && (
-                <div className="mt-3 rounded-lg border bg-white p-3 text-sm">
-                  <div className="font-medium">Saved:</div>
-                  <a
-                    href={savedUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="break-all text-blue-600 underline"
-                  >
-                    {savedUrl}
-                  </a>
-                  {saveInfo && (
-                    <div className="mt-2 text-xs text-zinc-600">
-                      PPI: {saveInfo.ppi} ({saveInfo.ppiStatus})
-                      {saveInfo.clamped ? " • Hit safe-area boundary; consider smaller scale." : ""}
-                      {saveInfo.ppiStatus === "low" ? " • Warning: may print soft." : ""}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </details>
-        </div>
-      </div>
-
-      {/* Sticky mobile CTA */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/70 md:hidden">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs text-zinc-600">Total</div>
-            <div className="truncate text-base font-semibold">{gbp.format(totalPrice)}</div>
-          </div>
-          <Button
-            className="w-1/2 rounded-xl bg-black text-white hover:bg-zinc-900 disabled:opacity-60"
-            onClick={proceedToPayment}
-            disabled={checkingOut}
-          >
-            {checkingOut ? "…" : "Continue to payment"}
-          </Button>
         </div>
       </div>
     </>
