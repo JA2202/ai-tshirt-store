@@ -73,7 +73,6 @@ type Snapshot = {
   material: Material;
 };
 
-/* tiny loading dots */
 function Dots() {
   return (
     <span className="inline-flex items-center gap-1">
@@ -116,7 +115,7 @@ export default function EditPage() {
   const [teeLoaded, setTeeLoaded] = useState(false);
   const [artLoaded, setArtLoaded] = useState(false);
 
-  // NEW: holds the saved PNG URL returned by /api/print-file
+  // NEW: saved print file URL from /api/print-file
   const [printFileUrl, setPrintFileUrl] = useState<string | null>(null);
   const [savingPrint, setSavingPrint] = useState(false);
 
@@ -252,7 +251,7 @@ export default function EditPage() {
     return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
   }, [side, color]);
 
-  /* ---------- Pointer utils ---------- */
+  /* ---------- Pointer logic ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
     const rect = containerRef.current!.getBoundingClientRect();
     return {
@@ -265,7 +264,6 @@ export default function EditPage() {
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
-  /* ---------- Drag image ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -302,7 +300,7 @@ export default function EditPage() {
     if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  /* ---------- Scale via handles ---------- */
+  /* ---------- Scale/Rotate ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -324,7 +322,6 @@ export default function EditPage() {
     if (modeRef.current === "scale") modeRef.current = "none";
   };
 
-  /* ---------- Rotate w/ snap ---------- */
   const SNAP_ANGLE = 15;
   const MAGNET = 4;
 
@@ -532,38 +529,54 @@ export default function EditPage() {
     pngUrl?: string;
     publicUrl?: string;
     file?: { url?: string };
+    error?: string;
   };
 
   async function handleSavePrintFile() {
     try {
-      setSavingPrint(true);
-      const res = await fetch("/api/print-file", { method: "POST" });
-      if (!res.ok) {
-        setSavingPrint(false);
-        alert("Could not create print file");
+      if (!chosenImage) {
+        alert("No design image loaded.");
         return;
       }
+      setSavingPrint(true);
+
+      // Send JSON so req.json() doesn’t throw; include the design URL
+      const res = await fetch("/api/print-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: chosenImage }),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        setSavingPrint(false);
+        alert(`Print file failed: ${txt}`);
+        return;
+      }
+
       const data = (await res.json()) as SaveResp;
       const url =
         data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+
       if (!url) {
         setSavingPrint(false);
         alert("Print file created but no URL returned.");
         return;
       }
+
       setPrintFileUrl(url);
       setSavingPrint(false);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
       setSavingPrint(false);
-      alert("Error creating print file.");
+      alert(`Error creating print file: ${String(err)}`);
     }
   }
 
   /* ---------- Proceed to payment (Stripe) ---------- */
   async function handleCheckout() {
     if (!printFileUrl) {
-      alert("Please open Advanced and click “Save print file (URL)” first.");
+      alert('Please open Advanced and click "Save print file (URL)" first.');
       return;
     }
 
@@ -575,7 +588,7 @@ export default function EditPage() {
       qty,
       unitPriceGBP: unitPrice,
       totalPriceGBP: totalPrice,
-      printFileUrl, // crucial: goes into Stripe metadata
+      printFileUrl, // goes into Stripe metadata -> webhook -> Printful
     };
 
     const res = await fetch("/api/checkout", {
@@ -719,7 +732,7 @@ export default function EditPage() {
           </div>
         </div>
 
-        {/* Side panel */}
+        {/* Controls */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Adjust & Options</h2>
@@ -780,7 +793,6 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Segmented picks */}
           <div className="mt-6 grid gap-4">
             <div className="flex items-center gap-3">
               <span className="w-20 text-sm text-zinc-600">Side</span>
@@ -872,7 +884,7 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Advanced (collapsed content was added earlier in your build; keeping simple here) */}
+          {/* Advanced */}
           <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="font-medium">Advanced</span>
