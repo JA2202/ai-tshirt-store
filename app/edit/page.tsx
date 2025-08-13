@@ -1,3 +1,4 @@
+// app/edit/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +9,7 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-/** ---------- Pricing (unchanged) ---------- */
+/** ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "heather"];
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
@@ -38,7 +39,7 @@ const gbp = new Intl.NumberFormat("en-GB", {
   maximumFractionDigits: 2,
 });
 
-/** ---------- Mockup PNG map (side + color) ---------- */
+/** ---------- Mockups ---------- */
 const TEE_MAP: Record<Side, Record<Color, string>> = {
   front: {
     white: "/mockups/tee_white_front.png",
@@ -107,9 +108,18 @@ export default function EditPage() {
   const [scalePct, setScalePct] = useState(60);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [opacity, setOpacity] = useState(100);
-  const [imgRatio, setImgRatio] = useState(1); // design h/w ratio
-  const [teeRatio, setTeeRatio] = useState(1); // mockup h/w ratio
-  const [pos, setPos] = useState({ x: 0, y: 0 }); // center in container px
+  const [imgRatio, setImgRatio] = useState(1);
+  const [teeRatio, setTeeRatio] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  // print export options (used in Advanced section)
+  const [removeWhite, setRemoveWhite] = useState(false);
+  const [savedUrl, setSavedUrl] = useState<string | null>(null);
+  const [saveInfo, setSaveInfo] = useState<{ ppi?: number; ppiStatus?: string; clamped?: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // checkout state
+  const [checkingOut, setCheckingOut] = useState(false);
 
   // loading skeleton flags
   const [teeLoaded, setTeeLoaded] = useState(false);
@@ -127,7 +137,7 @@ export default function EditPage() {
   });
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
-  // quantity for pricing
+  // quantity
   const [qty, setQty] = useState<number>(1);
 
   /** ---------- Geometry ---------- */
@@ -156,7 +166,7 @@ export default function EditPage() {
     [designWidthPx, imgRatio]
   );
 
-  /** ---------- Snap guides (position) ---------- */
+  /** ---------- Snap guides ---------- */
   const [vGuide, setVGuide] = useState<number | null>(null);
   const [hGuide, setHGuide] = useState<number | null>(null);
   const guideTimer = useRef<number | null>(null);
@@ -192,7 +202,6 @@ export default function EditPage() {
     } else if (Math.abs(x - rightX) <= SNAP) {
       snappedX = rightX; showV = safeRect.x + safeRect.w;
     }
-
     if (Math.abs(y - centerY) <= SNAP) {
       snappedY = centerY; showH = centerY;
     } else if (Math.abs(y - topY) <= SNAP) {
@@ -225,12 +234,9 @@ export default function EditPage() {
     setPos({ x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 });
   };
 
-  // Center after first load; on viewport changes, CLAMP instead of re-centre (prevents jump)
   useEffect(() => {
     centerDesign();
-    const onResize = () => {
-      setPos((p) => clampCenterToSafe(p.x, p.y));
-    };
+    const onResize = () => setPos((p) => clampCenterToSafe(p.x, p.y));
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,12 +247,12 @@ export default function EditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designWidthPx, designHeightPx]);
 
-  /** ---------- Mockup selection ---------- */
+  /** ---------- Mockup src ---------- */
   const teeSrc = useMemo(() => {
     return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
   }, [side, color]);
 
-  /** ---------- Pointer utilities ---------- */
+  /** ---------- Pointer utils ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
     const el = containerRef.current;
     if (!el) return { x: 0, y: 0 };
@@ -258,14 +264,12 @@ export default function EditPage() {
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
-  /** ---------- Unified end/cancel handler ---------- */
   const endPointer = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) modeRef.current = "none";
   };
 
-  /** ---------- Drag (move) on image ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -281,7 +285,6 @@ export default function EditPage() {
       const p = getLocalXY(e);
       setPos(clampCenterToSafe(p.x - gesture.current.startX, p.y - gesture.current.startY));
     }
-    // pinch zoom when two pointers active
     if (pointers.current.size >= 2) {
       const [a, b] = Array.from(pointers.current.values()).slice(0, 2);
       if (modeRef.current !== "pinch") {
@@ -298,11 +301,9 @@ export default function EditPage() {
   const onDesignPointerUp = (e: React.PointerEvent) => endPointer(e);
   const onDesignPointerCancel = (e: React.PointerEvent) => endPointer(e);
   const onDesignPointerLeave = (e: React.PointerEvent) => {
-    // If the pointer left while dragging, treat as cancel to avoid stray state
     if (modeRef.current !== "none") endPointer(e);
   };
 
-  /** ---------- Scale via corner handles ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -322,10 +323,8 @@ export default function EditPage() {
   const onScaleHandleUp = (e: React.PointerEvent) => endPointer(e);
   const onScaleHandleCancel = (e: React.PointerEvent) => endPointer(e);
 
-  /** ---------- Rotate via top handle (with Snap Angle) ---------- */
-  const SNAP_ANGLE = 15; // degrees
-  const MAGNET = 4; // degrees threshold to auto-snap near canonical angles
-
+  const SNAP_ANGLE = 15;
+  const MAGNET = 4;
   const onRotateHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -341,21 +340,18 @@ export default function EditPage() {
     const a = angleTo({ x: pos.x, y: pos.y }, p);
     const deltaDeg = deg(a - gesture.current.startAngle);
     let next = gesture.current.startRotation + deltaDeg;
-
-    if (e.shiftKey) {
-      next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
-    } else {
+    if (e.shiftKey) next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+    else {
       const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
       if (Math.abs(nearest - next) <= MAGNET) next = nearest;
     }
-
     next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
   };
   const onRotateHandleUp = (e: React.PointerEvent) => endPointer(e);
   const onRotateHandleCancel = (e: React.PointerEvent) => endPointer(e);
 
-  /** ---------- Wheel zoom (desktop) ---------- */
+  /** ---------- Wheel zoom ---------- */
   const onWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey) return;
     e.preventDefault();
@@ -364,7 +360,7 @@ export default function EditPage() {
     setScalePct(next);
   };
 
-  /** ---------- Keyboard nudge & undo/redo ---------- */
+  /** ---------- Undo/Redo ---------- */
   const isTextInput = (el: Element | null) =>
     !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
 
@@ -421,13 +417,11 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
-  // initial snapshot
   useEffect(() => {
     pushHistory(capture());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // debounced snapshot on changes
   useEffect(() => {
     if (applyingHistory.current) return;
     if (debTimer.current) window.clearTimeout(debTimer.current);
@@ -453,51 +447,16 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isTextInput(document.activeElement)) return;
-
-      // Undo / Redo
-      const z = e.key.toLowerCase() === "z";
-      const y = e.key.toLowerCase() === "y";
-      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
-        e.preventDefault(); undo(); return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (y || (z && e.shiftKey))) {
-        e.preventDefault(); redo(); return;
-      }
-
-      // Nudge
-      let dx = 0, dy = 0;
-      if (e.key === "ArrowLeft") dx = -1;
-      else if (e.key === "ArrowRight") dx = 1;
-      else if (e.key === "ArrowUp") dy = -1;
-      else if (e.key === "ArrowDown") dy = 1;
-      if (dx || dy) {
-        e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        setPos((p) => clampCenterToSafe(p.x + dx * step, p.y + dy * step));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clampCenterToSafe]);
-
-  /** ---------- Pricing (unchanged) ---------- */
+  /** ---------- Pricing ---------- */
   const unitPrice = useMemo(() => {
     const base = BASE_PRICE_MATERIAL[material] ?? 12;
     const colorFee = COLOR_SURCHARGE[color] ?? 0;
     const sizeFee = SIZE_SURCHARGE[size] ?? 0;
     return Math.max(0, base + colorFee + sizeFee);
   }, [material, color, size]);
+  const totalPrice = useMemo(() => +(unitPrice * Math.max(1, qty)).toFixed(2), [unitPrice, qty]);
 
-  const totalPrice = useMemo(
-    () => +(unitPrice * Math.max(1, qty)).toFixed(2),
-    [unitPrice, qty]
-  );
-
-  /** ---------- Download mockup JPG ---------- */
+  /** ---------- Mockup JPG ---------- */
   const downloadJPG = async () => {
     try {
       if (!containerRef.current) return;
@@ -511,11 +470,9 @@ export default function EditPage() {
       if (!ctx) return;
       ctx.scale(dpr, dpr);
 
-      // white background
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W, H);
 
-      // draw tee mockup centered at 90% width
       const tee = new Image();
       tee.crossOrigin = "anonymous";
       tee.src = teeSrc;
@@ -529,7 +486,6 @@ export default function EditPage() {
       const teeY = (H - teeH) / 2;
       if (tee.complete) ctx.drawImage(tee, teeX, teeY, teeW, teeH);
 
-      // draw design with rotation/opacity
       const art = new Image();
       art.crossOrigin = "anonymous";
       art.src = chosenImage!;
@@ -554,7 +510,123 @@ export default function EditPage() {
       a.remove();
     } catch (e) {
       console.error(e);
-      alert("Could not export JPG (likely CORS from remote image). Try using an uploaded design, then Download again.");
+      alert("Could not export JPG (likely CORS). Try an uploaded design.");
+    }
+  };
+
+  /** ---------- Print-ready (download) ---------- */
+  const downloadPrintPNG = async () => {
+    try {
+      if (!chosenImage || !safeRect.w || !safeRect.h) return;
+      const nX = clamp((pos.x - safeRect.x) / safeRect.w, 0, 1);
+      const nY = clamp((pos.y - safeRect.y) / safeRect.h, 0, 1);
+      const nW = clamp(designWidthPx / safeRect.w, 0.05, 1);
+
+      const res = await fetch("/api/print-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: chosenImage,
+          nX,
+          nY,
+          nW,
+          rotationDeg,
+          removeWhite,
+          meta: { side, color, size, material, qty },
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "print-ready.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Could not generate print-ready file.");
+    }
+  };
+
+  /** ---------- Save print file (persist to Blob) ---------- */
+  const savePrintFile = async () => {
+    try {
+      if (!chosenImage || !safeRect.w || !safeRect.h) return;
+      setSaving(true);
+      setSaveInfo(null);
+      setSavedUrl(null);
+
+      const nX = clamp((pos.x - safeRect.x) / safeRect.w, 0, 1);
+      const nY = clamp((pos.y - safeRect.y) / safeRect.h, 0, 1);
+      const nW = clamp(designWidthPx / safeRect.w, 0.05, 1);
+
+      const res = await fetch("/api/print-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: chosenImage,
+          nX,
+          nY,
+          nW,
+          rotationDeg,
+          removeWhite,
+          persist: true,
+          meta: { side, color, size, material, qty },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Upload failed");
+
+      setSavedUrl(data.url as string);
+      setSaveInfo({
+        ppi: data.effectivePPI,
+        ppiStatus: data.ppiStatus,
+        clamped: data.clamped,
+      });
+    } catch (e: any) {
+      alert(e?.message || "Could not save file. Check server logs and Blob token.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** ---------- Proceed to payment (Stripe Checkout) ---------- */
+  const proceedToPayment = async () => {
+    try {
+      if (!chosenImage || !safeRect.w || !safeRect.h) return;
+      setCheckingOut(true);
+
+      const nX = clamp((pos.x - safeRect.x) / safeRect.w, 0, 1);
+      const nY = clamp((pos.y - safeRect.y) / safeRect.h, 0, 1);
+      const nW = clamp(designWidthPx / safeRect.w, 0.05, 1);
+
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: chosenImage,
+          nX,
+          nY,
+          nW,
+          rotationDeg,
+          removeWhite,
+          side,
+          color,
+          size,
+          material,
+          qty,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Checkout failed");
+      window.location.href = data.url as string;
+    } catch (e: any) {
+      alert(e?.message || "Could not start checkout.");
+    } finally {
+      setCheckingOut(false);
     }
   };
 
@@ -673,7 +745,6 @@ export default function EditPage() {
     <>
       <Stepper current={2} />
 
-      {/* pb-24 to avoid overlap with sticky bar on mobile */}
       <div className="grid gap-6 pb-24 md:pb-0 lg:grid-cols-[1.1fr_0.9fr]">
         {/* Canvas card */}
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -682,7 +753,6 @@ export default function EditPage() {
             onWheel={onWheel}
             className="relative mx-auto aspect-[3/4] w-full max-w-xl min-h-[60vh] overflow-hidden overscroll-contain rounded-2xl border bg-white touch-none"
           >
-            {/* Loading skeleton overlay */}
             {!allLoaded && (
               <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
                 <div className="animate-pulse rounded-xl bg-zinc-200 p-6 text-sm text-zinc-600">
@@ -711,16 +781,10 @@ export default function EditPage() {
 
             {/* Snap guides */}
             {vGuide !== null && (
-              <div
-                className="pointer-events-none absolute top-0 h-full w-px bg-black/20"
-                style={{ left: vGuide }}
-              />
+              <div className="pointer-events-none absolute top-0 h-full w-px bg-black/20" style={{ left: vGuide }} />
             )}
             {hGuide !== null && (
-              <div
-                className="pointer-events-none absolute left-0 w-full border-t border-black/20"
-                style={{ top: hGuide }}
-              />
+              <div className="pointer-events-none absolute left-0 w-full border-t border-black/20" style={{ top: hGuide }} />
             )}
 
             {/* Design wrapper */}
@@ -735,9 +799,8 @@ export default function EditPage() {
                 touchAction: "none",
               }}
             >
-              {/* Design image */}
               <img
-                src={chosenImage}
+                src={chosenImage!}
                 alt="Design"
                 onLoad={(e) => {
                   setArtLoaded(true);
@@ -747,13 +810,11 @@ export default function EditPage() {
                 }}
                 draggable={false}
                 onDragStart={(e) => e.preventDefault()}
-
                 onPointerDown={onDesignPointerDown}
                 onPointerMove={onDesignPointerMove}
                 onPointerUp={onDesignPointerUp}
                 onPointerCancel={onDesignPointerCancel}
                 onPointerLeave={onDesignPointerLeave}
-
                 className="h-full w-full select-none cursor-move rounded-sm shadow-sm"
                 style={{ opacity: opacity / 100 }}
               />
@@ -761,7 +822,7 @@ export default function EditPage() {
               {/* bounding box */}
               <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
 
-              {/* corner scale handles (bigger on mobile) */}
+              {/* corner handles */}
               {[
                 { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
                 { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
@@ -779,7 +840,7 @@ export default function EditPage() {
                 />
               ))}
 
-              {/* rotate handle (bigger on mobile) */}
+              {/* rotate handle */}
               <div
                 onPointerDown={onRotateHandleDown}
                 onPointerMove={onRotateHandleMove}
@@ -800,16 +861,11 @@ export default function EditPage() {
               <Button variant="outline" onClick={undo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">
                 Undo
               </Button>
-              <Button
-                variant="outline"
-                onClick={redo}
-                disabled={!canRedo}
-                title="Redo (Ctrl/Cmd+Shift+Z)"
-              >
+              <Button variant="outline" onClick={redo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z)">
                 Redo
               </Button>
               <Button variant="outline" onClick={downloadJPG} title="Download mockup as JPG">
-                Download mockup JPG
+                Mockup JPG
               </Button>
             </div>
           </div>
@@ -821,13 +877,7 @@ export default function EditPage() {
                 <span className="text-zinc-600">Scale</span>
                 <span className="tabular-nums text-zinc-500">{scalePct}%</span>
               </div>
-              <Slider
-                value={[scalePct]}
-                min={10}
-                max={200}
-                step={1}
-                onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
-              />
+              <Slider value={[scalePct]} min={10} max={200} step={1} onValueChange={(v) => setScalePct(v[0] ?? scalePct)} />
             </div>
 
             <div>
@@ -835,13 +885,7 @@ export default function EditPage() {
                 <span className="text-zinc-600">Rotation</span>
                 <span className="tabular-nums text-zinc-500">{rotationDeg}°</span>
               </div>
-              <Slider
-                value={[rotationDeg]}
-                min={-45}
-                max={45}
-                step={1}
-                onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
-              />
+              <Slider value={[rotationDeg]} min={-45} max={45} step={1} onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)} />
             </div>
 
             <div>
@@ -849,19 +893,12 @@ export default function EditPage() {
                 <span className="text-zinc-600">Opacity</span>
                 <span className="tabular-nums text-zinc-500">{opacity}%</span>
               </div>
-              <Slider
-                value={[opacity]}
-                min={10}
-                max={100}
-                step={1}
-                onValueChange={(v) => setOpacity(v[0] ?? opacity)}
-              />
+              <Slider value={[opacity]} min={10} max={100} step={1} onValueChange={(v) => setOpacity(v[0] ?? opacity)} />
             </div>
           </div>
 
-          {/* Tee options: accordion on mobile, expanded on desktop */}
+          {/* Tee options */}
           <div className="mt-6">
-            {/* Mobile accordion */}
             <details className="md:hidden rounded-xl border">
               <summary className="cursor-pointer list-none rounded-xl px-4 py-3">
                 <div className="flex items-center justify-between">
@@ -873,8 +910,6 @@ export default function EditPage() {
                 <Options />
               </div>
             </details>
-
-            {/* Desktop expanded */}
             <div className="hidden md:block">
               <Options />
             </div>
@@ -928,29 +963,65 @@ export default function EditPage() {
                 Reset
               </Button>
               <Button
-                className="w-full sm:w-auto rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
-                onClick={() => {
-                  alert(
-                    [
-                      `Side: ${side}`,
-                      `Color: ${color}`,
-                      `Size: ${size}`,
-                      `Material: ${material}`,
-                      `Qty: ${qty}`,
-                      `Unit: ${gbp.format(unitPrice)}`,
-                      `Total: ${gbp.format(totalPrice)}`,
-                    ].join("\n")
-                  );
-                }}
+                className="w-full sm:w-auto rounded-xl bg-black px-6 text-white hover:bg-zinc-900 disabled:opacity-60"
+                onClick={proceedToPayment}
+                disabled={checkingOut}
               >
-                Proceed to payment →
+                {checkingOut ? "Starting checkout…" : "Proceed to payment →"}
               </Button>
             </div>
           </div>
+
+          {/* --- ADVANCED (printer tools) — collapsed, at the very bottom --- */}
+          <details className="mt-8 rounded-xl border bg-white/80">
+            <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm text-zinc-600 hover:text-zinc-800">
+              Advanced (printer tools)
+            </summary>
+            <div className="border-t p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={removeWhite}
+                    onChange={(e) => setRemoveWhite(e.target.checked)}
+                  />
+                  Remove white background (alpha)
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={downloadPrintPNG}>Print-ready PNG</Button>
+                  <Button variant="outline" onClick={savePrintFile} disabled={saving}>
+                    {saving ? "Saving…" : "Save print file (URL)"}
+                  </Button>
+                </div>
+              </div>
+
+              {savedUrl && (
+                <div className="mt-3 rounded-lg border bg-white p-3 text-sm">
+                  <div className="font-medium">Saved:</div>
+                  <a
+                    href={savedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all text-blue-600 underline"
+                  >
+                    {savedUrl}
+                  </a>
+                  {saveInfo && (
+                    <div className="mt-2 text-xs text-zinc-600">
+                      PPI: {saveInfo.ppi} ({saveInfo.ppiStatus})
+                      {saveInfo.clamped ? " • Hit safe-area boundary; consider smaller scale." : ""}
+                      {saveInfo.ppiStatus === "low" ? " • Warning: may print soft." : ""}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </details>
         </div>
       </div>
 
-      {/* Sticky mobile CTA bar */}
+      {/* Sticky mobile CTA */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/70 md:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="min-w-0">
@@ -958,22 +1029,11 @@ export default function EditPage() {
             <div className="truncate text-base font-semibold">{gbp.format(totalPrice)}</div>
           </div>
           <Button
-            className="w-1/2 rounded-xl bg-black text-white hover:bg-zinc-900"
-            onClick={() => {
-              alert(
-                [
-                  `Side: ${side}`,
-                  `Color: ${color}`,
-                  `Size: ${size}`,
-                  `Material: ${material}`,
-                  `Qty: ${qty}`,
-                  `Unit: ${gbp.format(unitPrice)}`,
-                  `Total: ${gbp.format(totalPrice)}`,
-                ].join("\n")
-              );
-            }}
+            className="w-1/2 rounded-xl bg-black text-white hover:bg-zinc-900 disabled:opacity-60"
+            onClick={proceedToPayment}
+            disabled={checkingOut}
           >
-            Continue to payment
+            {checkingOut ? "…" : "Continue to payment"}
           </Button>
         </div>
       </div>
