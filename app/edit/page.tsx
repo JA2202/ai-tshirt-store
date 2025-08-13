@@ -72,7 +72,6 @@ type Snapshot = {
   material: Material;
 };
 
-// progress dots
 function Dots() {
   return (
     <span className="inline-flex items-center gap-1">
@@ -226,9 +225,12 @@ export default function EditPage() {
     setPos({ x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 });
   };
 
+  // Center after first load; on viewport changes, CLAMP instead of re-centre (prevents jump)
   useEffect(() => {
     centerDesign();
-    const onResize = () => centerDesign();
+    const onResize = () => {
+      setPos((p) => clampCenterToSafe(p.x, p.y));
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,13 +248,22 @@ export default function EditPage() {
 
   /** ---------- Pointer utilities ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
-    const rect = containerRef.current!.getBoundingClientRect();
+    const el = containerRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const rect = el.getBoundingClientRect();
     return { x: (e as PointerEvent).clientX - rect.left, y: (e as PointerEvent).clientY - rect.top };
   };
   const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
     Math.hypot(a.x - b.x, a.y - b.y);
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
+
+  /** ---------- Unified end/cancel handler ---------- */
+  const endPointer = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) modeRef.current = "none";
+  };
 
   /** ---------- Drag (move) on image ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
@@ -284,11 +295,11 @@ export default function EditPage() {
       }
     }
   };
-  const onDesignPointerUp = (e: React.PointerEvent) => {
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-    pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2 && modeRef.current === "pinch") modeRef.current = "none";
-    if (modeRef.current === "drag") modeRef.current = "none";
+  const onDesignPointerUp = (e: React.PointerEvent) => endPointer(e);
+  const onDesignPointerCancel = (e: React.PointerEvent) => endPointer(e);
+  const onDesignPointerLeave = (e: React.PointerEvent) => {
+    // If the pointer left while dragging, treat as cancel to avoid stray state
+    if (modeRef.current !== "none") endPointer(e);
   };
 
   /** ---------- Scale via corner handles ---------- */
@@ -308,10 +319,8 @@ export default function EditPage() {
     const next = clamp(Math.round(gesture.current.startScale * f), 10, 200);
     setScalePct(next);
   };
-  const onScaleHandleUp = (e: React.PointerEvent) => {
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-    if (modeRef.current === "scale") modeRef.current = "none";
-  };
+  const onScaleHandleUp = (e: React.PointerEvent) => endPointer(e);
+  const onScaleHandleCancel = (e: React.PointerEvent) => endPointer(e);
 
   /** ---------- Rotate via top handle (with Snap Angle) ---------- */
   const SNAP_ANGLE = 15; // degrees
@@ -333,11 +342,9 @@ export default function EditPage() {
     const deltaDeg = deg(a - gesture.current.startAngle);
     let next = gesture.current.startRotation + deltaDeg;
 
-    // Hold Shift → hard snap to 15° increments
     if (e.shiftKey) {
       next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
     } else {
-      // Soft magnet near multiples of 15°
       const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
       if (Math.abs(nearest - next) <= MAGNET) next = nearest;
     }
@@ -345,10 +352,8 @@ export default function EditPage() {
     next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
   };
-  const onRotateHandleUp = (e: React.PointerEvent) => {
-    (e.target as Element).releasePointerCapture?.(e.pointerId);
-    if (modeRef.current === "rotate") modeRef.current = "none";
-  };
+  const onRotateHandleUp = (e: React.PointerEvent) => endPointer(e);
+  const onRotateHandleCancel = (e: React.PointerEvent) => endPointer(e);
 
   /** ---------- Wheel zoom (desktop) ---------- */
   const onWheel = (e: React.WheelEvent) => {
@@ -570,7 +575,6 @@ export default function EditPage() {
 
   const allLoaded = teeLoaded && artLoaded;
 
-  /** ---------- Reusable renderer for options (used in desktop + mobile accordion) ---------- */
   const Options = () => (
     <div className="grid gap-4">
       {/* Side */}
@@ -676,7 +680,7 @@ export default function EditPage() {
           <div
             ref={containerRef}
             onWheel={onWheel}
-            className="relative mx-auto aspect-[3/4] w-full max-w-xl min-h-[60vh] overflow-hidden rounded-2xl border bg-white touch-none"
+            className="relative mx-auto aspect-[3/4] w-full max-w-xl min-h-[60vh] overflow-hidden overscroll-contain rounded-2xl border bg-white touch-none"
           >
             {/* Loading skeleton overlay */}
             {!allLoaded && (
@@ -743,9 +747,13 @@ export default function EditPage() {
                 }}
                 draggable={false}
                 onDragStart={(e) => e.preventDefault()}
+
                 onPointerDown={onDesignPointerDown}
                 onPointerMove={onDesignPointerMove}
                 onPointerUp={onDesignPointerUp}
+                onPointerCancel={onDesignPointerCancel}
+                onPointerLeave={onDesignPointerLeave}
+
                 className="h-full w-full select-none cursor-move rounded-sm shadow-sm"
                 style={{ opacity: opacity / 100 }}
               />
@@ -765,6 +773,7 @@ export default function EditPage() {
                   onPointerDown={onScaleHandleDown}
                   onPointerMove={onScaleHandleMove}
                   onPointerUp={onScaleHandleUp}
+                  onPointerCancel={onScaleHandleCancel}
                   className={`absolute ${h.style} z-10 h-6 w-6 md:h-4 md:w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
                   title="Drag to scale"
                 />
@@ -775,6 +784,7 @@ export default function EditPage() {
                 onPointerDown={onRotateHandleDown}
                 onPointerMove={onRotateHandleMove}
                 onPointerUp={onRotateHandleUp}
+                onPointerCancel={onRotateHandleCancel}
                 className="absolute left-1/2 top-0 z-10 h-5 w-5 md:h-3 md:w-3 -translate-x-1/2 -translate-y-7 md:-translate-y-6 cursor-grab rounded-full border border-white bg-black"
                 title="Drag to rotate (hold Shift to snap)"
               />
