@@ -2,22 +2,32 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 
+export const runtime = "nodejs";          // we use Buffer/Blob on Node
+export const dynamic = "force-dynamic";   // always run server-side
+
+// Optional CORS/preflight support (safe to keep)
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
+
 function parseDataUrl(dataUrl: string): { mime: string; buffer: ArrayBuffer } {
-  // e.g. data:image/png;base64,AAAA...
-  const match = /^data:(.*?);base64,(.*)$/i.exec(dataUrl);
-  if (!match) {
-    throw new Error("Invalid data URL");
-  }
-  const mime = match[1] || "application/octet-stream";
-  const base64 = match[2];
-  const bin = Buffer.from(base64, "base64");
-  // Convert Node Buffer -> ArrayBuffer for Blob()
+  // data:image/png;base64,AAAA...
+  const m = /^data:(.*?);base64,(.*)$/i.exec(dataUrl);
+  if (!m) throw new Error("Invalid data URL");
+  const mime = m[1] || "application/octet-stream";
+  const bin = Buffer.from(m[2], "base64");
   const ab = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
   return { mime, buffer: ab };
 }
 
 export async function POST(req: Request) {
-  // 1) Read body safely (avoid "Unexpected end of JSON input")
+  // read JSON body safely
   let body: any = {};
   try {
     if (req.headers.get("content-type")?.includes("application/json")) {
@@ -27,21 +37,19 @@ export async function POST(req: Request) {
     body = {};
   }
 
-  const imageUrl = (body?.imageUrl as string | undefined)?.trim();
-
+  const imageUrl: string | undefined = body?.imageUrl?.trim();
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return NextResponse.json(
       { error: "BLOB_READ_WRITE_TOKEN is not set" },
       { status: 500 }
     );
   }
-
   if (!imageUrl) {
     return NextResponse.json({ error: "imageUrl is required" }, { status: 400 });
   }
 
   try {
-    // 2) Load the source image -> ArrayBuffer + contentType
+    // fetch or decode the image → ArrayBuffer + contentType
     let arrayBuffer: ArrayBuffer;
     let contentType = "image/png";
 
@@ -50,23 +58,20 @@ export async function POST(req: Request) {
       arrayBuffer = parsed.buffer;
       contentType = parsed.mime || "image/png";
     } else {
-      const res = await fetch(imageUrl);
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
+      const r = await fetch(imageUrl);
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
         return NextResponse.json(
-          { error: `Failed to fetch image (${res.status}): ${txt.slice(0, 200)}` },
+          { error: `Failed to fetch image (${r.status}): ${txt.slice(0, 200)}` },
           { status: 400 }
         );
       }
-      arrayBuffer = await res.arrayBuffer();
-      contentType = res.headers.get("content-type") || "image/png";
+      arrayBuffer = await r.arrayBuffer();
+      contentType = r.headers.get("content-type") || "image/png";
     }
 
-    // 3) Upload to Vercel Blob (public)
-    const filename = `print/print_${new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-")}.png`;
-
+    // upload to Vercel Blob
+    const filename = `print/print_${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
     const blobBody = new Blob([arrayBuffer], { type: contentType });
 
     const uploaded = await put(filename, blobBody, {
@@ -76,12 +81,8 @@ export async function POST(req: Request) {
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });
 
-    // 4) Respond with the public URL the webhook will use
     return NextResponse.json({ url: uploaded.url });
   } catch (err: unknown) {
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
