@@ -1,131 +1,126 @@
 // lib/printful.ts
-export type Side = "front" | "back";
-export type Color = "white" | "black" | "navy";
-export type Material = "standard" | "eco" | "premium";
+const PRINTFUL_API = "https://api.printful.com";
 
-export interface Recipient {
+/** Ensure required env var exists. */
+function required(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} is missing`);
+  return v;
+}
+
+const API_KEY = required("PRINTFUL_API_KEY");
+const STORE_ID = required("PRINTFUL_STORE_ID");
+
+/** Recipient we send to Printful. */
+export type PFRecipient = {
   name: string;
   address1: string;
-  address2?: string;
   city: string;
   state_code?: string;
-  country_code: string; // "GB", "US", etc.
+  country_code: string;
   zip: string;
   phone?: string;
   email?: string;
-}
-
-export interface LineItem {
-  material: Material;
-  color: Color;
-  size: string;
-  qty: number;
-  side: Side;
-  printFileUrl: string; // URL to your print-ready PNG
-}
-
-export interface CreateOrderParams {
-  external_id: string; // e.g. Stripe session id
-  recipient: Recipient;
-  items: LineItem[];
-  // demo: keep draft
-  confirm?: boolean; // default false
-}
-
-// ---- Variant mapping: REPLACE with your real IDs ----
-// Example: Unisex Tee (e.g. Gildan 64000/3001 or similar). Use your actual catalog variant IDs.
-const VARIANTS: Record<Material, Record<Color, Record<string, number>>> = {
-  standard: {
-    white: { S: 11576, M: 11577, L: 11578, XL: 11579, XXL: 11580 },
-    black: { S: 11561, M: 11547, L: 11548, XL: 11549, XXL:  11550 },
-    navy: { S: 11561, M: 11562, L: 11563, XL: 11564, XXL: 11565 },
-  },
-  eco: {
-    white: { XS: 19393, S: 19396, M: 19399, L: 19402, XL: 19405, XXL: 19408 },
-    black: { XS: 19391, S: 19394, M: 19397, L: 19400, XL: 19403, XXL: 19406 },
-    navy: { XS: 19392, S: 19395, M: 19398, L: 19401, XL: 19404, XXL: 19407 },
-  },
-  premium: {
-    white: { S: 11864, M: 11865, L: 11866, XL: 11867, XXL: 11868 },
-    black: { S: 11869, M: 11870, L: 11871, XL: 11872, XXL: 11873 },
-    navy: { S: 11879, M: 11880, L: 11881, XL: 11882, XXL: 11883 },
-  },
 };
 
-export function getVariantId(material: Material, color: Color, size: string): number | null {
-  const m = VARIANTS[material];
-  const c = m?.[color];
-  const id = c?.[size];
-  return typeof id === "number" ? id : null;
-}
-
-// ---- Minimal Printful client ----
-type PrintfulCreateOrderResponse = {
-  code: number;
-  result?: { id?: number; external_id?: string };
-  error?: { reason?: string; message?: string };
+/** Printful order item. */
+export type PFItem = {
+  quantity: number;
+  variant_id: number; // Printful catalog variant ID
+  files: Array<{
+    url: string;
+    type?: "default" | "preview";
+    position?: "front" | "back";
+  }>;
 };
 
-const PRINTFUL_API = "https://api.printful.com";
-
-export async function createPrintfulDraftOrder(params: CreateOrderParams): Promise<{
-  ok: boolean;
-  orderId?: number;
-  error?: string;
-}> {
-  const token = process.env.PRINTFUL_API_KEY;
-  if (!token) return { ok: false, error: "PRINTFUL_API_KEY missing" };
-
-  // Build Printful items from our LineItem(s)
-  const items = params.items.map((li) => {
-    const variant_id = getVariantId(li.material, li.color, li.size);
-    return {
-      variant_id, // required
-      quantity: li.qty,
-      // Files: provide print file + placement (front/back). Fallback to "default".
-      files: [
-        {
-          type: li.side === "back" ? "back" : "front", // placement hint per Printful guidance
-          url: li.printFileUrl,
-          // position with placement is backward-compatible across API notes
-          position: { placement: li.side },
-        },
-      ],
-    };
-  });
-
-  if (items.some((i) => !i.variant_id)) {
-    return { ok: false, error: "Missing variant_id mapping. Update lib/printful.ts VARIANTS." };
-  }
-
-  const body = {
-    external_id: params.external_id,
-    recipient: params.recipient,
-    items,
-    // keep as draft in demos
-    confirm: params.confirm === true ? true : false,
+type PFOrderCreateBody = {
+  external_id: string;
+  recipient: PFRecipient;
+  items: PFItem[];
+  confirm?: boolean; // false => draft
+  retail_costs?: {
+    currency: string; // e.g. "GBP"
   };
+};
 
-  const res = await fetch(`${PRINTFUL_API}/orders`, {
-    method: "POST",
+async function pfFetch<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetch(`${PRINTFUL_API}${path}`, {
+    ...init,
     headers: {
+      Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
-      // Printful tokens are now OAuth-style tokens used as Bearer in header
-      // (Private tokens for single-store projects). 
-      // Docs: Developers portal & migration notes.
-      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
     },
-    body: JSON.stringify(body),
+    cache: "no-store",
   });
 
-  const data = (await res.json()) as PrintfulCreateOrderResponse;
+  const text = await res.text();
+  let data: unknown = text;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // leave as text
+  }
 
   if (!res.ok) {
-    const msg =
-      data?.error?.message ||
-      `Printful error ${data?.code || res.status}: ${res.statusText}`;
-    return { ok: false, error: msg };
+    throw new Error(
+      `Printful ${res.status} ${res.statusText}: ${
+        typeof data === "string" ? data : JSON.stringify(data)
+      }`
+    );
   }
+  return data as T;
+}
 
-  return { ok: true, orderId: data.result?.id };
+/** 👉 Named export (used by the webhook) */
+export async function createDraftOrder(body: PFOrderCreateBody) {
+  // visible in Vercel Function logs while testing
+  console.log("Creating Printful order at", `/stores/${STORE_ID}/orders`);
+  return pfFetch<{ result: { id: number } }>(`/stores/${STORE_ID}/orders`, {
+    method: "POST",
+    body: JSON.stringify({ ...body, confirm: false }),
+  });
+}
+
+/* ------------------ Variant map (replace IDs) ------------------ */
+export type ColorKey = "white" | "black" | "heather";
+export type SizeKey = "XS" | "S" | "M" | "L" | "XL" | "XXL";
+export type MaterialKey = "standard" | "eco" | "premium";
+
+/** PLACEHOLDERS — replace with your real Printful catalog variant_ids */
+const VARIANTS: Record<
+  MaterialKey,
+  Record<ColorKey, Record<SizeKey, number>>
+> = {
+  standard: {
+    white: { XS: 123456, S: 123457, M: 123458, L: 123459, XL: 123460, XXL: 123461 },
+    black:  { XS: 123462, S: 123463, M: 123464, L: 123465, XL: 123466, XXL: 123467 },
+    heather:{ XS: 123468, S: 123469, M: 123470, L: 123471, XL: 123472, XXL: 123473 },
+  },
+  eco: {
+    white: { XS: 223456, S: 223457, M: 223458, L: 223459, XL: 223460, XXL: 223461 },
+    black:  { XS: 223462, S: 223463, M: 223464, L: 223465, XL: 223466, XXL: 223467 },
+    heather:{ XS: 223468, S: 223469, M: 223470, L: 223471, XL: 223472, XXL: 223473 },
+  },
+  premium: {
+    white: { XS: 323456, S: 323457, M: 323458, L: 323459, XL: 323460, XXL: 323461 },
+    black:  { XS: 323462, S: 323463, M: 323464, L: 323465, XL: 323466, XXL: 323467 },
+    heather:{ XS: 323468, S: 323469, M: 323470, L: 323471, XL: 323472, XXL: 323473 },
+  },
+};
+
+/** 👉 Named export (used by the webhook) */
+export function resolveVariantId(
+  material: MaterialKey,
+  color: ColorKey,
+  size: SizeKey
+): number {
+  const id = VARIANTS?.[material]?.[color]?.[size];
+  if (!id) {
+    throw new Error(
+      `No Printful variant id for ${material}/${color}/${size}. Update VARIANTS in lib/printful.ts.`
+    );
+  }
+  return id;
 }
