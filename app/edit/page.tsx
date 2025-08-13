@@ -1,4 +1,3 @@
-// app/edit/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +59,6 @@ const rad = (deg: number) => (deg * Math.PI) / 180;
 const deg = (rad: number) => (rad * 180) / Math.PI;
 
 type GestureMode = "none" | "drag" | "scale" | "rotate" | "pinch";
-
 type Snapshot = {
   x: number;
   y: number;
@@ -73,6 +71,7 @@ type Snapshot = {
   material: Material;
 };
 
+// progress dots
 function Dots() {
   return (
     <span className="inline-flex items-center gap-1">
@@ -112,7 +111,7 @@ export default function EditPage() {
   const [teeRatio, setTeeRatio] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
 
-  // print export options (used in Advanced section)
+  // print export options (advanced)
   const [removeWhite, setRemoveWhite] = useState(false);
   const [savedUrl, setSavedUrl] = useState<string | null>(null);
   const [saveInfo, setSaveInfo] = useState<{ ppi?: number; ppiStatus?: string; clamped?: boolean } | null>(null);
@@ -196,18 +195,25 @@ export default function EditPage() {
     const bottomY = safeRect.y + safeRect.h - halfH;
 
     if (Math.abs(x - centerX) <= SNAP) {
-      snappedX = centerX; showV = centerX;
+      snappedX = centerX;
+      showV = centerX;
     } else if (Math.abs(x - leftX) <= SNAP) {
-      snappedX = leftX; showV = safeRect.x;
+      snappedX = leftX;
+      showV = safeRect.x;
     } else if (Math.abs(x - rightX) <= SNAP) {
-      snappedX = rightX; showV = safeRect.x + safeRect.w;
+      snappedX = rightX;
+      showV = safeRect.x + safeRect.w;
     }
+
     if (Math.abs(y - centerY) <= SNAP) {
-      snappedY = centerY; showH = centerY;
+      snappedY = centerY;
+      showH = centerY;
     } else if (Math.abs(y - topY) <= SNAP) {
-      snappedY = topY; showH = safeRect.y;
+      snappedY = topY;
+      showH = safeRect.y;
     } else if (Math.abs(y - bottomY) <= SNAP) {
-      snappedY = bottomY; showH = safeRect.y + safeRect.h;
+      snappedY = bottomY;
+      showH = safeRect.y + safeRect.h;
     }
 
     setVGuide(showV);
@@ -360,9 +366,12 @@ export default function EditPage() {
     setScalePct(next);
   };
 
-  /** ---------- Undo/Redo ---------- */
+  /** ---------- Keyboard nudge & undo/redo ---------- */
   const isTextInput = (el: Element | null) =>
-    !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+    !!el &&
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      (el as HTMLElement).isContentEditable);
 
   const history = useRef<Snapshot[]>([]);
   const index = useRef<number>(-1);
@@ -447,6 +456,43 @@ export default function EditPage() {
     setCanRedo(index.current < history.current.length - 1);
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // ✅ don’t hijack keys while typing
+      if (isTextInput(document.activeElement)) return;
+
+      // Undo / Redo
+      const z = e.key.toLowerCase() === "z";
+      const y = e.key.toLowerCase() === "y";
+      if ((e.ctrlKey || e.metaKey) && z && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (y || (z && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      // Nudge
+      let dx = 0,
+        dy = 0;
+      if (e.key === "ArrowLeft") dx = -1;
+      else if (e.key === "ArrowRight") dx = 1;
+      else if (e.key === "ArrowUp") dy = -1;
+      else if (e.key === "ArrowDown") dy = 1;
+      if (dx || dy) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        setPos((p) => clampCenterToSafe(p.x + dx * step, p.y + dy * step));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** ---------- Pricing ---------- */
   const unitPrice = useMemo(() => {
     const base = BASE_PRICE_MATERIAL[material] ?? 12;
@@ -508,9 +554,11 @@ export default function EditPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-    } catch (e) {
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Could not export JPG (likely CORS). Try an uploaded design.";
       console.error(e);
-      alert("Could not export JPG (likely CORS). Try an uploaded design.");
+      alert(message);
     }
   };
 
@@ -545,9 +593,11 @@ export default function EditPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch (e) {
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Could not generate print-ready file.";
       console.error(e);
-      alert("Could not generate print-ready file.");
+      alert(message);
     }
   };
 
@@ -577,17 +627,25 @@ export default function EditPage() {
           meta: { side, color, size, material, qty },
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Upload failed");
+      const data = (await res.json()) as {
+        url?: string;
+        effectivePPI?: number;
+        ppiStatus?: string;
+        clamped?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.url) throw new Error(data?.error || "Upload failed");
 
-      setSavedUrl(data.url as string);
+      setSavedUrl(data.url);
       setSaveInfo({
         ppi: data.effectivePPI,
         ppiStatus: data.ppiStatus,
         clamped: data.clamped,
       });
-    } catch (e: any) {
-      alert(e?.message || "Could not save file. Check server logs and Blob token.");
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Could not save file. Check server logs and Blob token.";
+      alert(message);
     } finally {
       setSaving(false);
     }
@@ -620,11 +678,12 @@ export default function EditPage() {
           qty,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Checkout failed");
-      window.location.href = data.url as string;
-    } catch (e: any) {
-      alert(e?.message || "Could not start checkout.");
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) throw new Error(data?.error || "Checkout failed");
+      window.location.href = data.url;
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Could not start checkout.";
+      alert(message);
     } finally {
       setCheckingOut(false);
     }
@@ -733,9 +792,13 @@ export default function EditPage() {
       <div className="flex items-center gap-3">
         <span className="w-20 text-sm text-zinc-600">Quantity</span>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>−</Button>
+          <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
+            −
+          </Button>
           <span className="w-10 text-center tabular-nums">{qty}</span>
-          <Button variant="outline" onClick={() => setQty((q) => q + 1)}>+</Button>
+          <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
+            +
+          </Button>
         </div>
       </div>
     </div>
@@ -972,7 +1035,7 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* --- ADVANCED (printer tools) — collapsed, at the very bottom --- */}
+          {/* --- ADVANCED (printer tools) — collapsed --- */}
           <details className="mt-8 rounded-xl border bg-white/80">
             <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm text-zinc-600 hover:text-zinc-800">
               Advanced (printer tools)
