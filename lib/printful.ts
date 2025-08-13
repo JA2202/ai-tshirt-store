@@ -1,6 +1,6 @@
 // lib/printful.ts
 export type Side = "front" | "back";
-export type Color = "white" | "black" | "heather";
+export type Color = "white" | "black" | "navy";
 export type Material = "standard" | "eco" | "premium";
 
 export interface Recipient {
@@ -36,19 +36,19 @@ export interface CreateOrderParams {
 // Example: Unisex Tee (e.g. Gildan 64000/3001 or similar). Use your actual catalog variant IDs.
 const VARIANTS: Record<Material, Record<Color, Record<string, number>>> = {
   standard: {
-    white: { XS: 4011, S: 4012, M: 4013, L: 4014, XL: 4015, XXL: 4016 },
-    black: { XS: 4021, S: 4022, M: 4023, L: 4024, XL: 4025, XXL: 4026 },
-    heather: { XS: 4031, S: 4032, M: 4033, L: 4034, XL: 4035, XXL: 4036 },
+    white: { S: 11576, M: 11577, L: 11578, XL: 11579, XXL: 11580 },
+    black: { S: 11561, M: 11547, L: 11548, XL: 11549, XXL:  11550 },
+    navy: { S: 11561, M: 11562, L: 11563, XL: 11564, XXL: 11565 },
   },
   eco: {
-    white: { XS: 5011, S: 5012, M: 5013, L: 5014, XL: 5015, XXL: 5016 },
-    black: { XS: 5021, S: 5022, M: 5023, L: 5024, XL: 5025, XXL: 5026 },
-    heather: { XS: 5031, S: 5032, M: 5033, L: 5034, XL: 5035, XXL: 5036 },
+    white: { XS: 19393, S: 19396, M: 19399, L: 19402, XL: 19405, XXL: 19408 },
+    black: { XS: 19391, S: 19394, M: 19397, L: 19400, XL: 19403, XXL: 19406 },
+    navy: { XS: 19392, S: 19395, M: 19398, L: 19401, XL: 19404, XXL: 19407 },
   },
   premium: {
-    white: { XS: 6011, S: 6012, M: 6013, L: 6014, XL: 6015, XXL: 6016 },
-    black: { XS: 6021, S: 6022, M: 6023, L: 6024, XL: 6025, XXL: 6026 },
-    heather: { XS: 6031, S: 6032, M: 6033, L: 6034, XL: 6035, XXL: 6036 },
+    white: { S: 11864, M: 11865, L: 11866, XL: 11867, XXL: 11868 },
+    black: { S: 11869, M: 11870, L: 11871, XL: 11872, XXL: 11873 },
+    navy: { S: 11879, M: 11880, L: 11881, XL: 11882, XXL: 11883 },
   },
 };
 
