@@ -4,11 +4,13 @@ import { list } from "@vercel/blob";
 
 export const dynamic = "force-dynamic"; // always SSR
 
-type SearchParams = { [key: string]: string | string[] | undefined };
+/* ---------- Types ---------- */
+type FlatSearchParams = Record<string, string>;
 
-function spGet(sp?: SearchParams, key?: string) {
-  const v = key ? sp?.[key] : undefined;
-  return typeof v === "string" ? v : Array.isArray(v) ? v[0] : undefined;
+/* ---------- Small utils ---------- */
+function spGet(sp: FlatSearchParams, key: string) {
+  const v = sp[key];
+  return typeof v === "string" ? v : undefined;
 }
 
 function fmtGBP(pennies: number | null | undefined) {
@@ -44,10 +46,14 @@ function readNumber(o: Record<string, unknown>, k: string): number | undefined {
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams?: SearchParams;
+  /** Next.js v15 optimized search params (Promise) */
+  searchParams: Promise<FlatSearchParams>;
 }) {
+  // Unwrap the promise first
+  const sp = await searchParams;
+
   // Simple gate via ?key=... (optional: if ADMIN_KEY not set, page is open)
-  const provided = spGet(searchParams, "key");
+  const provided = spGet(sp, "key");
   const allowed =
     !process.env.ADMIN_KEY || provided === process.env.ADMIN_KEY;
 
@@ -95,7 +101,7 @@ export default async function AdminPage({
   type SavedOrderRow = {
     key: string;
     url: string;
-    uploadedAt?: string | Date; // could be Date or string
+    uploadedAt?: string | Date; // Blob SDK may give Date or string
     stripeSessionId?: string;
     stripeEventId?: string;
     printfulOrderId?: number;
@@ -127,32 +133,54 @@ export default async function AdminPage({
             const raw: unknown = await r.json();
 
             if (isRecord(raw)) {
-              // Common top-level fields
               const topStr = (k: string) => readString(raw, k);
               const topNum = (k: string) => readNumber(raw, k);
 
               stripeSessionId =
                 topStr("stripeSessionId") ||
-                (isRecord(raw.session) ? readString(raw.session as Record<string, unknown>, "id") : undefined) ||
-                (isRecord(raw.stripe) ? readString(raw.stripe as Record<string, unknown>, "sessionId") : undefined);
+                (isRecord(raw.session)
+                  ? readString(
+                      raw.session as Record<string, unknown>,
+                      "id"
+                    )
+                  : undefined) ||
+                (isRecord(raw.stripe)
+                  ? readString(
+                      raw.stripe as Record<string, unknown>,
+                      "sessionId"
+                    )
+                  : undefined);
 
               stripeEventId =
                 topStr("stripeEventId") ||
-                (isRecord(raw.event) ? readString(raw.event as Record<string, unknown>, "id") : undefined) ||
-                (isRecord(raw.stripe) ? readString(raw.stripe as Record<string, unknown>, "eventId") : undefined);
+                (isRecord(raw.event)
+                  ? readString(raw.event as Record<string, unknown>, "id")
+                  : undefined) ||
+                (isRecord(raw.stripe)
+                  ? readString(
+                      raw.stripe as Record<string, unknown>,
+                      "eventId"
+                    )
+                  : undefined);
 
               printfulOrderId =
                 topNum("printfulOrderId") ||
                 topNum("orderId") ||
                 (isRecord(raw.printful)
-                  ? readNumber(raw.printful as Record<string, unknown>, "orderId")
+                  ? readNumber(
+                      raw.printful as Record<string, unknown>,
+                      "orderId"
+                    )
                   : undefined);
 
               printfulExternalId =
                 topStr("printfulExternalId") ||
                 topStr("external_id") ||
                 (isRecord(raw.printful)
-                  ? readString(raw.printful as Record<string, unknown>, "external_id")
+                  ? readString(
+                      raw.printful as Record<string, unknown>,
+                      "external_id"
+                    )
                   : undefined);
 
               amountGBP = topNum("amountGBP");
@@ -307,9 +335,7 @@ export default async function AdminPage({
                         <a
                           className="text-sky-700 underline"
                           href={`https://dashboard.stripe.com${
-                            process.env.NODE_ENV !== "production"
-                              ? "/test"
-                              : ""
+                            process.env.NODE_ENV !== "production" ? "/test" : ""
                           }/checkout/sessions/${o.stripeSessionId}`}
                           target="_blank"
                           rel="noreferrer"
