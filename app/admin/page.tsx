@@ -28,6 +28,19 @@ function niceDate(d: string | Date | undefined): string {
   return ms ? new Date(ms).toLocaleString() : "—";
 }
 
+/* ---------- Safe JSON helpers (no 'any') ---------- */
+function isRecord(u: unknown): u is Record<string, unknown> {
+  return !!u && typeof u === "object";
+}
+function readString(o: Record<string, unknown>, k: string): string | undefined {
+  const v = o[k];
+  return typeof v === "string" ? v : undefined;
+}
+function readNumber(o: Record<string, unknown>, k: string): number | undefined {
+  const v = o[k];
+  return typeof v === "number" ? v : undefined;
+}
+
 export default async function AdminPage({
   searchParams,
 }: {
@@ -79,11 +92,10 @@ export default async function AdminPage({
   }
 
   // ----- Blob: list saved order JSON records -----
-  // (Webhook wrote files under orders/order_*.json)
   type SavedOrderRow = {
     key: string;
     url: string;
-    uploadedAt?: string | Date; // <-- accept Date or string
+    uploadedAt?: string | Date; // could be Date or string
     stripeSessionId?: string;
     stripeEventId?: string;
     printfulOrderId?: number;
@@ -112,23 +124,39 @@ export default async function AdminPage({
 
           try {
             const r = await fetch(b.url, { cache: "no-store" });
-            const j = (await r.json()) as Record<string, any>;
-            // Resilient to shape differences:
-            stripeSessionId =
-              j?.stripe?.sessionId ??
-              j?.stripeSessionId ??
-              j?.session?.id ??
-              undefined;
-            stripeEventId =
-              j?.stripe?.eventId ?? j?.stripeEventId ?? j?.event?.id;
-            printfulOrderId =
-              j?.printful?.orderId ?? j?.printfulOrderId ?? j?.orderId;
-            printfulExternalId =
-              j?.printful?.external_id ??
-              j?.printfulExternalId ??
-              j?.external_id;
-            amountGBP =
-              typeof j?.amountGBP === "number" ? j.amountGBP : undefined;
+            const raw: unknown = await r.json();
+
+            if (isRecord(raw)) {
+              // Common top-level fields
+              const topStr = (k: string) => readString(raw, k);
+              const topNum = (k: string) => readNumber(raw, k);
+
+              stripeSessionId =
+                topStr("stripeSessionId") ||
+                (isRecord(raw.session) ? readString(raw.session as Record<string, unknown>, "id") : undefined) ||
+                (isRecord(raw.stripe) ? readString(raw.stripe as Record<string, unknown>, "sessionId") : undefined);
+
+              stripeEventId =
+                topStr("stripeEventId") ||
+                (isRecord(raw.event) ? readString(raw.event as Record<string, unknown>, "id") : undefined) ||
+                (isRecord(raw.stripe) ? readString(raw.stripe as Record<string, unknown>, "eventId") : undefined);
+
+              printfulOrderId =
+                topNum("printfulOrderId") ||
+                topNum("orderId") ||
+                (isRecord(raw.printful)
+                  ? readNumber(raw.printful as Record<string, unknown>, "orderId")
+                  : undefined);
+
+              printfulExternalId =
+                topStr("printfulExternalId") ||
+                topStr("external_id") ||
+                (isRecord(raw.printful)
+                  ? readString(raw.printful as Record<string, unknown>, "external_id")
+                  : undefined);
+
+              amountGBP = topNum("amountGBP");
+            }
           } catch {
             // ignore parse errors
           }
@@ -136,7 +164,7 @@ export default async function AdminPage({
           return {
             key: b.pathname,
             url: b.url,
-            uploadedAt: b.uploadedAt, // could be Date or string
+            uploadedAt: b.uploadedAt,
             stripeSessionId,
             stripeEventId,
             printfulOrderId,
