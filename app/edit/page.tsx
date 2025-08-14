@@ -115,7 +115,7 @@ export default function EditPage() {
   const [teeLoaded, setTeeLoaded] = useState(false);
   const [artLoaded, setArtLoaded] = useState(false);
 
-  // NEW: saved print file URL from /api/print-file
+  // Saved print file URL from /api/print-file
   const [printFileUrl, setPrintFileUrl] = useState<string | null>(null);
   const [savingPrint, setSavingPrint] = useState(false);
 
@@ -540,7 +540,6 @@ export default function EditPage() {
       }
       setSavingPrint(true);
 
-      // Send JSON so req.json() doesn’t throw; include the design URL
       const res = await fetch("/api/print-file", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -573,38 +572,73 @@ export default function EditPage() {
     }
   }
 
-  /* ---------- Proceed to payment (Stripe) ---------- */
-  async function handleCheckout() {
-    if (!printFileUrl) {
-      alert('Please open Advanced and click "Save print file (URL)" first.');
-      return;
-    }
+  // NEW: ensure we have a print file before checkout
+  async function ensurePrintFile(): Promise<string> {
+    if (printFileUrl) return printFileUrl;
+    if (!chosenImage) throw new Error("No design image loaded.");
+    setSavingPrint(true);
 
-    const payload = {
-      side,
-      color,
-      size,
-      material,
-      qty,
-      unitPriceGBP: unitPrice,
-      totalPriceGBP: totalPrice,
-      printFileUrl, // goes into Stripe metadata -> webhook -> Printful
-    };
-
-    const res = await fetch("/api/checkout", {
+    const res = await fetch("/api/print-file", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ imageUrl: chosenImage }),
     });
+
     if (!res.ok) {
-      alert("Checkout failed.");
-      return;
+      const txt = await res.text();
+      setSavingPrint(false);
+      throw new Error(txt || "Failed to create print file");
     }
-    const j = (await res.json()) as { url?: string; error?: string };
-    if (j.url) {
-      window.location.href = j.url;
-    } else {
-      alert(j.error || "Checkout failed.");
+
+    const data = (await res.json()) as SaveResp;
+    const url =
+      data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+
+    if (!url) {
+      setSavingPrint(false);
+      throw new Error("Print file created but no URL returned.");
+    }
+
+    setPrintFileUrl(url);
+    setSavingPrint(false);
+    return url;
+  }
+
+  /* ---------- Proceed to payment (Stripe) ---------- */
+  async function handleCheckout() {
+    try {
+      // Auto-create the print file if needed
+      const url = await ensurePrintFile();
+
+      const payload = {
+        side,
+        color,
+        size,
+        material,
+        qty,
+        unitPriceGBP: unitPrice,
+        totalPriceGBP: totalPrice,
+        printFileUrl: url,
+      };
+
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        alert("Checkout failed.");
+        return;
+      }
+      const j = (await res.json()) as { url?: string; error?: string };
+      if (j.url) {
+        window.location.href = j.url;
+      } else {
+        alert(j.error || "Checkout failed.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert(`Could not prepare print file: ${String(e)}`);
     }
   }
 
@@ -884,26 +918,33 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Advanced */}
-          <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-medium">Advanced</span>
-              <div className="text-xs text-zinc-500">
+          {/* Advanced (accordion) */}
+          <details className="mt-6 rounded-xl border bg-zinc-50 p-4">
+            <summary className="cursor-pointer select-none font-medium">
+              Advanced
+              <span className="ml-2 align-middle text-xs text-zinc-500">
                 {printFileUrl ? (
-                  <a href={printFileUrl} className="underline" target="_blank" rel="noreferrer">
+                  <a
+                    href={printFileUrl}
+                    className="underline"
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     Print file saved
                   </a>
                 ) : (
-                  "No print file saved"
+                  " (no print file saved)"
                 )}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
+              </span>
+            </summary>
+
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" onClick={handleSavePrintFile} disabled={savingPrint}>
                 {savingPrint ? "Saving…" : "Save print file (URL)"}
               </Button>
             </div>
-          </div>
+          </details>
 
           {/* Pricing summary */}
           <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
@@ -954,9 +995,10 @@ export default function EditPage() {
               <Button
                 className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
                 onClick={handleCheckout}
-                title={printFileUrl ? "" : "Save a print file first (Advanced section)"}
+                disabled={savingPrint}
+                title={savingPrint ? "Preparing print file…" : ""}
               >
-                Proceed to payment →
+                {savingPrint ? "Preparing…" : "Proceed to payment →"}
               </Button>
             </div>
           </div>

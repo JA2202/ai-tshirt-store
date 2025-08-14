@@ -103,14 +103,14 @@ const VARIANTS: Record<MaterialKey, Record<ColorKey, Record<SizeKey, number>>> =
     navy:   { XS: 0, S: 11561, M: 11562, L: 11563, XL: 11564, XXL: 11565 }, // <-- YOUR real Navy ids
   },
   eco: {
-    white:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },     // fill with real ids if you add eco tees
-    black:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
-    navy:   { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+    white:  { XS: 0, S: 19396, M: 19399, L: 19402, XL: 19405, XXL: 19408 },     // fill with real ids if you add eco tees
+    black:  { XS: 0, S: 19394, M: 19397, L: 19400, XL: 19403, XXL: 19406 },
+    navy:   { XS: 0, S: 19395, M: 19398, L: 19401, XL: 19404, XXL: 19407 },
   },
   premium: {
-    white:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
-    black:  { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
-    navy:   { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+    white:  { XS: 0, S: 11864, M: 11865, L: 11866, XL: 11867, XXL: 11868 },
+    black:  { XS: 0, S: 11869, M: 11870, L: 11871, XL: 11872, XXL: 11873 },
+    navy:   { XS: 0, S: 11879, M: 11880, L: 11881, XL: 11882, XXL: 11883 },
   },
 };
 
@@ -120,4 +120,37 @@ export function resolveVariantId(material: MaterialKey, color: ColorKey, size: S
     throw new Error(`No Printful variant id for ${material}/${color}/${size}. Update VARIANTS in lib/printful.ts.`);
   }
   return id;
+}
+
+// --- Add to lib/printful.ts (keep your existing code above) ---
+
+export type PFV2Order = {
+  id: number;
+  external_id?: string;
+  status?: string;
+  _links?: { self?: { href?: string } };
+};
+
+export async function getOrderByExternalId(
+  externalId: string
+): Promise<PFV2Order | null> {
+  // v2 supports filtering by external_id
+  try {
+    const data = await pfFetchV2<{ items?: PFV2Order[] }>(
+      `/orders?external_id=${encodeURIComponent(externalId)}`,
+      { method: "GET" }
+    );
+    if (Array.isArray(data?.items) && data.items.length > 0) {
+      return data.items[0]!;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Optional helper to build a dashboard URL for investors
+export const PRINTFUL_STORE_ID = STORE_ID;
+export function printfulDashboardOrderUrl(orderId: number) {
+  return `https://www.printful.com/dashboard/store/${STORE_ID}/orders/${orderId}`;
 }

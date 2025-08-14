@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 
+// app/api/print-file/route.ts
+const OUT_W = 3600; // 12" * 300 DPI
+const OUT_H = 4800; // 16" * 300 DPI
+
 export const runtime = "nodejs";          // we use Buffer/Blob on Node
 export const dynamic = "force-dynamic";   // always run server-side
 
