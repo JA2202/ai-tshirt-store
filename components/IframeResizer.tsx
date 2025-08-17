@@ -6,28 +6,39 @@ export default function IframeResizer() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const post = () => {
-      // Send height to parent (your host site should listen for this)
-      try {
-        const h = Math.max(
-          document.documentElement.scrollHeight,
-          document.body.scrollHeight
-        );
-        window.parent?.postMessage({ type: "ai-tee-resize", height: h }, "*");
-      } catch {}
+    // Add a CSS hook when embedded (?embed=1)
+    const params = new URLSearchParams(window.location.search);
+    const isEmbedded = params.get("embed") === "1";
+    if (isEmbedded) {
+      document.documentElement.classList.add("embed");
+    }
+
+    // Post height to parent for iframe auto-resize
+    const postHeight = () => {
+      const h = Math.max(
+        document.documentElement.scrollHeight,
+        document.body?.scrollHeight ?? 0,
+        document.documentElement.offsetHeight,
+        document.body?.offsetHeight ?? 0
+      );
+      window.parent?.postMessage({ type: "tstore:height", height: h }, "*");
     };
 
-    // Initial + on resize/route/content changes
-    const ro = new ResizeObserver(() => post());
-    ro.observe(document.documentElement);
+    let timer: number | undefined;
+    const onResize = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(postHeight, 100);
+    };
 
-    post();
-    const onLoad = () => post();
-    window.addEventListener("load", onLoad);
+    // initial + events
+    postHeight();
+    window.addEventListener("load", postHeight);
+    window.addEventListener("resize", onResize);
 
     return () => {
-      ro.disconnect();
-      window.removeEventListener("load", onLoad);
+      window.removeEventListener("load", postHeight);
+      window.removeEventListener("resize", onResize);
+      if (timer) window.clearTimeout(timer);
     };
   }, []);
 
