@@ -83,6 +83,26 @@ function Dots() {
   );
 }
 
+/* ---------- Text layer helpers ---------- */
+const TEXT_FONTS = [
+  // Web-safe set (no extra deps)
+  { label: "Impact", value: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" },
+  { label: "Bebas Neue (fallback)", value: "'Bebas Neue', Impact, sans-serif" },
+  { label: "Arial Black", value: "'Arial Black', Arial, sans-serif" },
+  { label: "Montserrat (fallback)", value: "Montserrat, Arial, sans-serif" },
+  { label: "Inter (UI default)", value: "Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Times", value: "'Times New Roman', Times, serif" },
+  { label: "Courier", value: "'Courier New', Courier, monospace" },
+  { label: "Trebuchet", value: "'Trebuchet MS', Arial, sans-serif" },
+  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
+];
+
+const TEXT_COLORS = [
+  "#111111", "#ffffff", "#ff375f", "#007AFF", "#10b981",
+  "#f59e0b", "#ef4444", "#000000", "#6b7280", "#7c3aed",
+];
+
 export default function EditPage() {
   const router = useRouter();
   const {
@@ -132,6 +152,28 @@ export default function EditPage() {
 
   const [qty, setQty] = useState<number>(1);
 
+  /* ---------- NEW: Text layer state (independent from image) ---------- */
+  const [textEnabled, setTextEnabled] = useState(false);
+  const [textHasFocus, setTextHasFocus] = useState(false);
+  const [text, setText] = useState<string>("YOUR TEXT");
+  const [textFont, setTextFont] = useState<string>(TEXT_FONTS[0].value);
+  const [textColor, setTextColor] = useState<string>("#111111");
+  const [textOpacity, setTextOpacity] = useState<number>(100);
+  const [textScalePct, setTextScalePct] = useState<number>(60);
+  const [textRotationDeg, setTextRotationDeg] = useState<number>(0);
+  const [textPos, setTextPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // separate gestures for text so we don't interfere with image
+  const textModeRef = useRef<GestureMode>("none");
+  const textGesture = useRef({
+    startX: 0,
+    startY: 0,
+    startScale: 60,
+    startRotation: 0,
+    startDist: 0,
+    startAngle: 0,
+  });
+
   /* ---------- Geometry ---------- */
   const containerW = containerRef.current?.clientWidth ?? 0;
   const containerH = containerRef.current?.clientHeight ?? 0;
@@ -158,6 +200,28 @@ export default function EditPage() {
     [designWidthPx, imgRatio]
   );
 
+  /* ---------- NEW: text box measured dimensions ---------- */
+  const measureCanvas = useRef<HTMLCanvasElement | null>(null);
+  const getCtx = () => {
+    if (!measureCanvas.current) {
+      measureCanvas.current = document.createElement("canvas");
+    }
+    const ctx = measureCanvas.current.getContext("2d");
+    return ctx;
+  };
+  const baseTextSize = Math.max(12, Math.round((containerW || 320) * 0.08)); // ~8% of canvas width
+  const textFontSizePx = Math.max(12, Math.round(baseTextSize * (textScalePct / 100)));
+
+  const textDims = useMemo(() => {
+    const ctx = getCtx();
+    if (!ctx) return { w: 120, h: Math.round(textFontSizePx * 1.2) };
+    ctx.font = `700 ${textFontSizePx}px ${textFont}`;
+    const metrics = ctx.measureText(text || "YOUR TEXT");
+    const w = Math.min(Math.max(40, Math.round(metrics.width + 12)), Math.round(safeRect.w)); // padding + clamp
+    const h = Math.max(24, Math.round(textFontSizePx * 1.2));
+    return { w, h };
+  }, [text, textFont, textFontSizePx, safeRect.w]);
+
   /* ---------- Snap guides ---------- */
   const [vGuide, setVGuide] = useState<number | null>(null);
   const [hGuide, setHGuide] = useState<number | null>(null);
@@ -172,14 +236,12 @@ export default function EditPage() {
     }, 350);
   };
 
-  const applySnap = (x: number, y: number) => {
+  const applySnapGeneric = (x: number, y: number, halfW: number, halfH: number) => {
     let sx = x;
     let sy = y;
     let showV: number | null = null;
     let showH: number | null = null;
 
-    const halfW = designWidthPx / 2;
-    const halfH = designHeightPx / 2;
     const centerX = safeRect.x + safeRect.w / 2;
     const centerY = safeRect.y + safeRect.h / 2;
     const leftX = safeRect.x + halfW;
@@ -188,25 +250,19 @@ export default function EditPage() {
     const bottomY = safeRect.y + safeRect.h - halfH;
 
     if (Math.abs(x - centerX) <= SNAP) {
-      sx = centerX;
-      showV = centerX;
+      sx = centerX; showV = centerX;
     } else if (Math.abs(x - leftX) <= SNAP) {
-      sx = leftX;
-      showV = safeRect.x;
+      sx = leftX; showV = safeRect.x;
     } else if (Math.abs(x - rightX) <= SNAP) {
-      sx = rightX;
-      showV = safeRect.x + safeRect.w;
+      sx = rightX; showV = safeRect.x + safeRect.w;
     }
 
     if (Math.abs(y - centerY) <= SNAP) {
-      sy = centerY;
-      showH = centerY;
+      sy = centerY; showH = centerY;
     } else if (Math.abs(y - topY) <= SNAP) {
-      sy = topY;
-      showH = safeRect.y;
+      sy = topY; showH = safeRect.y;
     } else if (Math.abs(y - bottomY) <= SNAP) {
-      sy = bottomY;
-      showH = safeRect.y + safeRect.h;
+      sy = bottomY; showH = safeRect.y + safeRect.h;
     }
 
     setVGuide(showV);
@@ -226,16 +282,37 @@ export default function EditPage() {
       return { x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 };
     }
     const clamped = { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
-    return applySnap(clamped.x, clamped.y);
+    return applySnapGeneric(clamped.x, clamped.y, halfW, halfH);
+  };
+
+  const clampTextToSafe = (x: number, y: number) => {
+    const halfW = textDims.w / 2;
+    const halfH = textDims.h / 2;
+    const minX = safeRect.x + halfW;
+    const maxX = safeRect.x + safeRect.w - halfW;
+    const minY = safeRect.y + halfH;
+    const maxY = safeRect.y + safeRect.h - halfH;
+    if (minX > maxX || minY > maxY) {
+      return { x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 };
+    }
+    const clamped = { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
+    return applySnapGeneric(clamped.x, clamped.y, halfW, halfH);
   };
 
   const centerDesign = () => {
     setPos({ x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 });
   };
+  const centerText = () => {
+    setTextPos({ x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 });
+  };
 
   useEffect(() => {
     centerDesign();
-    const onResize = () => centerDesign();
+    centerText();
+    const onResize = () => {
+      centerDesign();
+      centerText();
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,15 +320,16 @@ export default function EditPage() {
 
   useEffect(() => {
     setPos((p) => clampCenterToSafe(p.x, p.y));
+    setTextPos((p) => clampTextToSafe(p.x, p.y));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [designWidthPx, designHeightPx]);
+  }, [designWidthPx, designHeightPx, textDims.w, textDims.h]);
 
   /* ---------- Mockup src ---------- */
   const teeSrc = useMemo(() => {
     return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
   }, [side, color]);
 
-  /* ---------- Pointer logic ---------- */
+  /* ---------- Pointer helpers ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
     const rect = containerRef.current!.getBoundingClientRect();
     return {
@@ -264,7 +342,9 @@ export default function EditPage() {
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
+  /* ---------- Image layer pointer logic (unchanged) ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
+    setTextHasFocus(false);
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     modeRef.current = "drag";
@@ -300,7 +380,7 @@ export default function EditPage() {
     if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  /* ---------- Scale/Rotate ---------- */
+  /* ---------- Image scale/rotate (unchanged) ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -354,7 +434,76 @@ export default function EditPage() {
     if (modeRef.current === "rotate") modeRef.current = "none";
   };
 
-  /* ---------- Wheel zoom ---------- */
+  /* ---------- NEW: Text layer pointer logic ---------- */
+  const onTextPointerDown = (e: React.PointerEvent) => {
+    if (!textEnabled) return;
+    setTextHasFocus(true);
+    e.preventDefault();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    textModeRef.current = "drag";
+    const p = getLocalXY(e);
+    textGesture.current.startX = p.x - textPos.x;
+    textGesture.current.startY = p.y - textPos.y;
+  };
+  const onTextPointerMove = (e: React.PointerEvent) => {
+    if (!textEnabled || textModeRef.current !== "drag") return;
+    const p = getLocalXY(e);
+    setTextPos(clampTextToSafe(p.x - textGesture.current.startX, p.y - textGesture.current.startY));
+  };
+  const onTextPointerUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (textModeRef.current === "drag") textModeRef.current = "none";
+  };
+
+  const onTextScaleDown = (e: React.PointerEvent) => {
+    if (!textEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    textModeRef.current = "scale";
+    const p = getLocalXY(e);
+    textGesture.current.startDist = dist({ x: textPos.x, y: textPos.y }, p);
+    textGesture.current.startScale = textScalePct;
+  };
+  const onTextScaleMove = (e: React.PointerEvent) => {
+    if (!textEnabled || textModeRef.current !== "scale") return;
+    const p = getLocalXY(e);
+    const f = dist({ x: textPos.x, y: textPos.y }, p) / Math.max(1, textGesture.current.startDist);
+    const next = clamp(Math.round(textGesture.current.startScale * f), 10, 300);
+    setTextScalePct(next);
+  };
+  const onTextScaleUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (textModeRef.current === "scale") textModeRef.current = "none";
+  };
+
+  const onTextRotateDown = (e: React.PointerEvent) => {
+    if (!textEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    textModeRef.current = "rotate";
+    const p = getLocalXY(e);
+    textGesture.current.startAngle = angleTo({ x: textPos.x, y: textPos.y }, p);
+    textGesture.current.startRotation = textRotationDeg;
+  };
+  const onTextRotateMove = (e: React.PointerEvent) => {
+    if (!textEnabled || textModeRef.current !== "rotate") return;
+    const p = getLocalXY(e);
+    const a = angleTo({ x: textPos.x, y: textPos.y }, p);
+    const deltaDeg = deg(a - textGesture.current.startAngle);
+    let next = textGesture.current.startRotation + deltaDeg;
+    const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+    if (Math.abs(nearest - next) <= MAGNET) next = nearest;
+    next = clamp(Math.round(next), -45, 45);
+    setTextRotationDeg(next);
+  };
+  const onTextRotateUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (textModeRef.current === "rotate") textModeRef.current = "none";
+  };
+
+  /* ---------- Wheel zoom (unchanged for image) ---------- */
   const onWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey) return;
     e.preventDefault();
@@ -363,7 +512,7 @@ export default function EditPage() {
     setScalePct(next);
   };
 
-  /* ---------- Undo/Redo ---------- */
+  /* ---------- Undo/Redo (unchanged, tracks image + product options only) ---------- */
   const isTextInput = (el: Element | null) =>
     !!el &&
     (el.tagName === "INPUT" ||
@@ -466,7 +615,7 @@ export default function EditPage() {
     [unitPrice, qty]
   );
 
-  /* ---------- Download mockup JPG ---------- */
+  /* ---------- Download mockup JPG (now includes text if enabled) ---------- */
   const downloadJPG = async () => {
     try {
       if (!containerRef.current) return;
@@ -510,6 +659,22 @@ export default function EditPage() {
       ctx.restore();
       ctx.globalAlpha = 1;
 
+      if (textEnabled && (text || "").trim().length > 0) {
+        const baseFS = Math.max(12, Math.round(W * 0.08));
+        const fs = Math.max(12, Math.round(baseFS * (textScalePct / 100)));
+        ctx.save();
+        ctx.translate(textPos.x, textPos.y);
+        ctx.rotate(rad(textRotationDeg));
+        ctx.globalAlpha = textOpacity / 100;
+        ctx.font = `700 ${fs}px ${textFont}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = textColor;
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
       const url = canvas.toDataURL("image/jpeg", 0.9);
       const a = document.createElement("a");
       a.href = url;
@@ -523,7 +688,7 @@ export default function EditPage() {
     }
   };
 
-  /* ---------- Advanced: Save print file (URL) ---------- */
+  /* ---------- Advanced: Save print file (URL) (unchanged) ---------- */
   type SaveResp = {
     url?: string;
     pngUrl?: string;
@@ -635,19 +800,17 @@ export default function EditPage() {
       if (j.url) {
         // If the app is embedded (iframe?embed=1), open Stripe in the top window.
         const isEmbedded =
-        typeof window !== "undefined" &&
-        new URLSearchParams(window.location.search).get("embed") === "1";
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("embed") === "1";
 
-      if (isEmbedded) {
-        window.top?.location.assign(j.url);
+        if (isEmbedded) {
+          window.top?.location.assign(j.url);
+        } else {
+          window.location.assign(j.url);
+        }
       } else {
-        window.location.assign(j.url);
+        alert(j.error || "Checkout failed.");
       }
-    } else {
-      alert(j.error || "Checkout failed.");
-    }
-
-
     } catch (e) {
       console.error(e);
       alert(`Could not prepare print file: ${String(e)}`);
@@ -660,9 +823,9 @@ export default function EditPage() {
         <Stepper current={2} />
         <div className="rounded-2xl border bg-white p-6 text-[#222222] shadow-sm">
           No design selected. Go to{" "}
-          <Link href="/generate" className="underline">
-            Generate
-          </Link>
+            <Link href="/generate" className="underline">
+              Generate
+            </Link>
           .
         </div>
       </>
@@ -722,6 +885,7 @@ export default function EditPage() {
                 />
               )}
 
+              {/* IMAGE LAYER */}
               <div
                 className="absolute"
                 style={{
@@ -777,6 +941,73 @@ export default function EditPage() {
                   title="Drag to rotate (hold Shift to snap)"
                 />
               </div>
+
+              {/* NEW: TEXT LAYER (renders above image) */}
+              {textEnabled && (text || "").trim().length > 0 && (
+                <div
+                  className="absolute"
+                  style={{
+                    left: `${textPos.x}px`,
+                    top: `${textPos.y}px`,
+                    width: `${textDims.w}px`,
+                    height: `${textDims.h}px`,
+                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
+                    touchAction: "none",
+                  }}
+                >
+                  <div
+                    onPointerDown={onTextPointerDown}
+                    onPointerMove={onTextPointerMove}
+                    onPointerUp={onTextPointerUp}
+                    className="h-full w-full select-none cursor-move"
+                    style={{
+                      opacity: textOpacity / 100,
+                      display: "grid",
+                      placeItems: "center",
+                      fontFamily: textFont,
+                      fontWeight: 700,
+                      fontSize: `${textFontSizePx}px`,
+                      lineHeight: 1.2,
+                      color: textColor,
+                      userSelect: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {text}
+                  </div>
+
+                  {/* selection ring */}
+                  <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
+
+                  {/* handles (only show when focused to avoid clutter) */}
+                  {textHasFocus && (
+                    <>
+                      {[
+                        { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
+                        { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
+                        { k: "bl", style: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2" },
+                        { k: "br", style: "right-0 bottom-0 translate-x-1/2 translate-y-1/2" },
+                      ].map((h) => (
+                        <div
+                          key={h.k}
+                          onPointerDown={onTextScaleDown}
+                          onPointerMove={onTextScaleMove}
+                          onPointerUp={onTextScaleUp}
+                          className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
+                          title="Drag to scale"
+                        />
+                      ))}
+                      <div
+                        onPointerDown={onTextRotateDown}
+                        onPointerMove={onTextRotateMove}
+                        onPointerUp={onTextRotateUp}
+                        className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
+                        title="Drag to rotate"
+                      />
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -797,54 +1028,200 @@ export default function EditPage() {
               </div>
             </div>
 
-            <div className="grid gap-5">
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>Scale</span>
-                  <span className="tabular-nums">{scalePct}%</span>
-                </div>
-                <Slider
-                  value={[scalePct]}
-                  min={10}
-                  max={200}
-                  step={1}
-                  onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
-                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                />
+            {/* NEW: Text controls */}
+            <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Text</span>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!textEnabled) centerText();
+                    setTextEnabled((v) => !v);
+                    setTextHasFocus(true);
+                  }}
+                >
+                  {textEnabled ? "Remove" : "Add Text"}
+                </Button>
               </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>Rotation</span>
-                  <span className="tabular-nums">{rotationDeg}°</span>
-                </div>
-                <Slider
-                  value={[rotationDeg]}
-                  min={-45}
-                  max={45}
-                  step={1}
-                  onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
-                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                />
-              </div>
+              {textEnabled && (
+                <div className="grid gap-4">
+                  {/* Content */}
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <span className="text-sm">Content</span>
+                    <input
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      placeholder="Your text"
+                      className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>Opacity</span>
-                  <span className="tabular-nums">{opacity}%</span>
+                  {/* Font */}
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="text-sm sm:w-20 sm:shrink-0">Font</span>
+                    <select
+                      value={textFont}
+                      onChange={(e) => setTextFont(e.target.value)}
+                      className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                    >
+                      {TEXT_FONTS.map((f) => (
+                        <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Color */}
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="text-sm sm:w-20 sm:shrink-0">Color</span>
+                    <div className="flex flex-wrap gap-2">
+                      {TEXT_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setTextColor(c)}
+                          className={`h-7 w-7 rounded-full border transition ${
+                            textColor === c ? "ring-2 ring-[#007AFF]" : ""
+                          }`}
+                          style={{
+                            background: c,
+                            borderColor: c.toLowerCase() === "#ffffff" ? "#e5e7eb" : "transparent",
+                          }}
+                          title={c}
+                        />
+                      ))}
+                      <input
+                        type="text"
+                        className="w-28 rounded-lg border bg-white px-2 py-1 text-xs"
+                        value={textColor}
+                        onChange={(e) => setTextColor(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Text fine-tune */}
+                  <details className="rounded-xl border bg-white p-3">
+                    <summary className="cursor-pointer select-none text-sm font-medium">
+                      Text fine-tune
+                    </summary>
+                    <div className="mt-3 grid gap-4">
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span>Scale</span>
+                          <span className="tabular-nums">{textScalePct}%</span>
+                        </div>
+                        <Slider
+                          value={[textScalePct]}
+                          min={10}
+                          max={300}
+                          step={1}
+                          onValueChange={(v) => setTextScalePct(v[0] ?? textScalePct)}
+                          className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span>Rotation</span>
+                          <span className="tabular-nums">{textRotationDeg}°</span>
+                        </div>
+                        <Slider
+                          value={[textRotationDeg]}
+                          min={-45}
+                          max={45}
+                          step={1}
+                          onValueChange={(v) => setTextRotationDeg(v[0] ?? textRotationDeg)}
+                          className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span>Opacity</span>
+                          <span className="tabular-nums">{textOpacity}%</span>
+                        </div>
+                        <Slider
+                          value={[textOpacity]}
+                          min={10}
+                          max={100}
+                          step={1}
+                          onValueChange={(v) => setTextOpacity(v[0] ?? textOpacity)}
+                          className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setTextScalePct(60);
+                            setTextRotationDeg(0);
+                            setTextOpacity(100);
+                            centerText();
+                          }}
+                        >
+                          Reset text
+                        </Button>
+                      </div>
+                    </div>
+                  </details>
                 </div>
-                <Slider
-                  value={[opacity]}
-                  min={10}
-                  max={100}
-                  step={1}
-                  onValueChange={(v) => setOpacity(v[0] ?? opacity)}
-                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                />
-              </div>
+              )}
             </div>
 
-            <div className="mt-6 grid gap-4">
+            {/* Fine-tune (image) — moved from top to keep layout clean */}
+            <details className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <summary className="cursor-pointer select-none font-medium">
+                Fine-tune (image)
+              </summary>
+              <div className="mt-4 grid gap-5">
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Scale</span>
+                    <span className="tabular-nums">{scalePct}%</span>
+                  </div>
+                  <Slider
+                    value={[scalePct]}
+                    min={10}
+                    max={200}
+                    step={1}
+                    onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
+                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Rotation</span>
+                    <span className="tabular-nums">{rotationDeg}°</span>
+                  </div>
+                  <Slider
+                    value={[rotationDeg]}
+                    min={-45}
+                    max={45}
+                    step={1}
+                    onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
+                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Opacity</span>
+                    <span className="tabular-nums">{opacity}%</span>
+                  </div>
+                  <Slider
+                    value={[opacity]}
+                    min={10}
+                    max={100}
+                    step={1}
+                    onValueChange={(v) => setOpacity(v[0] ?? opacity)}
+                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                  />
+                </div>
+              </div>
+            </details>
+
+            {/* Product options (unchanged) */}
+            <div className="mt-0 grid gap-4">
               {/* Side */}
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Side</span>
@@ -1016,6 +1393,7 @@ export default function EditPage() {
                     setRotationDeg(0);
                     setOpacity(100);
                     centerDesign();
+                    // leave text as-is; provide its own reset inside Text fine-tune
                   }}
                 >
                   Reset
