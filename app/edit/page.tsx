@@ -83,6 +83,25 @@ function Dots() {
   );
 }
 
+/* ---------- Text layer helpers ---------- */
+const TEXT_FONTS = [
+  { label: "Impact", value: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" },
+  { label: "Bebas Neue (fallback)", value: "'Bebas Neue', Impact, sans-serif" },
+  { label: "Arial Black", value: "'Arial Black', Arial, sans-serif" },
+  { label: "Montserrat (fallback)", value: "Montserrat, Arial, sans-serif" },
+  { label: "Inter (UI default)", value: "Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Times", value: "'Times New Roman', Times, serif" },
+  { label: "Courier", value: "'Courier New', Courier, monospace" },
+  { label: "Trebuchet", value: "'Trebuchet MS', Arial, sans-serif" },
+  { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
+];
+
+const TEXT_COLORS = [
+  "#111111", "#ffffff", "#ff375f", "#007AFF", "#10b981",
+  "#f59e0b", "#ef4444", "#000000", "#6b7280", "#7c3aed",
+];
+
 export default function EditPage() {
   const router = useRouter();
   const {
@@ -105,12 +124,28 @@ export default function EditPage() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const teeImgRef = useRef<HTMLImageElement | null>(null);
 
+  // observe container size to avoid window resize jumps
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0].contentRect;
+      setContainerSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const [scalePct, setScalePct] = useState(60);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [opacity, setOpacity] = useState(100);
   const [imgRatio, setImgRatio] = useState(1);
   const [teeRatio, setTeeRatio] = useState(1);
+
+  // pixel position (derived from normalized) + normalized position (0..1)
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [posN, setPosN] = useState({ nx: 0.5, ny: 0.5 });
 
   const [teeLoaded, setTeeLoaded] = useState(false);
   const [artLoaded, setArtLoaded] = useState(false);
@@ -132,9 +167,31 @@ export default function EditPage() {
 
   const [qty, setQty] = useState<number>(1);
 
+  /* ---------- NEW: Text layer state ---------- */
+  const [textEnabled, setTextEnabled] = useState(false);
+  const [textHasFocus, setTextHasFocus] = useState(false);
+  const [text, setText] = useState<string>("YOUR TEXT");
+  const [textFont, setTextFont] = useState<string>(TEXT_FONTS[0].value);
+  const [textColor, setTextColor] = useState<string>("#111111");
+  const [textOpacity, setTextOpacity] = useState<number>(100);
+  const [textScalePct, setTextScalePct] = useState<number>(60);
+  const [textRotationDeg, setTextRotationDeg] = useState<number>(0);
+  const [textPos, setTextPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [textPosN, setTextPosN] = useState<{ nx: number; ny: number }>({ nx: 0.5, ny: 0.5 });
+
+  const textModeRef = useRef<GestureMode>("none");
+  const textGesture = useRef({
+    startX: 0,
+    startY: 0,
+    startScale: 60,
+    startRotation: 0,
+    startDist: 0,
+    startAngle: 0,
+  });
+
   /* ---------- Geometry ---------- */
-  const containerW = containerRef.current?.clientWidth ?? 0;
-  const containerH = containerRef.current?.clientHeight ?? 0;
+  const containerW = containerSize.w;
+  const containerH = containerSize.h;
 
   const safeRect = useMemo(() => {
     const w = containerW;
@@ -158,6 +215,28 @@ export default function EditPage() {
     [designWidthPx, imgRatio]
   );
 
+  /* ---------- NEW: text box measured dimensions (SSR-safe) ---------- */
+  const measureCanvas = useRef<HTMLCanvasElement | null>(null);
+  const getCtx = () => {
+    if (typeof window === "undefined" || typeof document === "undefined") return null;
+    if (!measureCanvas.current) {
+      measureCanvas.current = document.createElement("canvas");
+    }
+    return measureCanvas.current.getContext("2d");
+  };
+  const baseTextSize = Math.max(12, Math.round((containerW || 320) * 0.08)); // ~8% width
+  const textFontSizePx = Math.max(12, Math.round(baseTextSize * (textScalePct / 100)));
+
+  const textDims = useMemo(() => {
+    const ctx = getCtx();
+    if (!ctx) return { w: 120, h: Math.round(textFontSizePx * 1.2) };
+    ctx.font = `700 ${textFontSizePx}px ${textFont}`;
+    const metrics = ctx.measureText(text || "YOUR TEXT");
+    const w = Math.min(Math.max(40, Math.round(metrics.width + 12)), Math.round(safeRect.w));
+    const h = Math.max(24, Math.round(textFontSizePx * 1.2));
+    return { w, h };
+  }, [text, textFont, textFontSizePx, safeRect.w]);
+
   /* ---------- Snap guides ---------- */
   const [vGuide, setVGuide] = useState<number | null>(null);
   const [hGuide, setHGuide] = useState<number | null>(null);
@@ -172,14 +251,17 @@ export default function EditPage() {
     }, 350);
   };
 
-  const applySnap = (x: number, y: number) => {
+  const applySnapGeneric = (
+    x: number,
+    y: number,
+    halfW: number,
+    halfH: number
+  ) => {
     let sx = x;
     let sy = y;
     let showV: number | null = null;
     let showH: number | null = null;
 
-    const halfW = designWidthPx / 2;
-    const halfH = designHeightPx / 2;
     const centerX = safeRect.x + safeRect.w / 2;
     const centerY = safeRect.y + safeRect.h / 2;
     const leftX = safeRect.x + halfW;
@@ -215,43 +297,142 @@ export default function EditPage() {
     return { x: sx, y: sy };
   };
 
-  const clampCenterToSafe = (x: number, y: number) => {
-    const halfW = designWidthPx / 2;
-    const halfH = designHeightPx / 2;
+  /* ---------- Rotated extents + clamping ---------- */
+  const rotatedHalfExtents = (w: number, h: number, angleDeg: number) => {
+    const c = Math.abs(Math.cos(rad(angleDeg)));
+    const s = Math.abs(Math.sin(rad(angleDeg)));
+    return {
+      halfW: 0.5 * (c * w + s * h),
+      halfH: 0.5 * (s * w + c * h),
+    };
+  };
+
+  const clampUsingHalf = (x: number, y: number, halfW: number, halfH: number) => {
+    // if too big to fit at all, fall back to center
+    if (halfW * 2 > safeRect.w || halfH * 2 > safeRect.h) {
+      return { x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 };
+    }
     const minX = safeRect.x + halfW;
     const maxX = safeRect.x + safeRect.w - halfW;
     const minY = safeRect.y + halfH;
     const maxY = safeRect.y + safeRect.h - halfH;
-    if (minX > maxX || minY > maxY) {
-      return { x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 };
-    }
-    const clamped = { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
-    return applySnap(clamped.x, clamped.y);
+    return { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
   };
+
+  const clampPosImage = (x: number, y: number, snap: boolean) => {
+    const { halfW, halfH } = rotatedHalfExtents(designWidthPx, designHeightPx, rotationDeg);
+    const base = clampUsingHalf(x, y, halfW, halfH);
+    return snap ? applySnapGeneric(base.x, base.y, halfW, halfH) : base;
+  };
+
+  const clampPosText = (x: number, y: number, snap: boolean) => {
+    const { halfW, halfH } = rotatedHalfExtents(textDims.w, textDims.h, textRotationDeg);
+    const base = clampUsingHalf(x, y, halfW, halfH);
+    return snap ? applySnapGeneric(base.x, base.y, halfW, halfH) : base;
+  };
+
+  // convert between px and normalized (0..1 inside safe rect)
+  const toNorm = (x: number, y: number) => {
+    const nx = safeRect.w ? clamp((x - safeRect.x) / safeRect.w, 0, 1) : 0.5;
+    const ny = safeRect.h ? clamp((y - safeRect.y) / safeRect.h, 0, 1) : 0.5;
+    return { nx, ny };
+  };
+  const fromNorm = (nx: number, ny: number) => ({
+    x: safeRect.x + nx * safeRect.w,
+    y: safeRect.y + ny * safeRect.h,
+  });
+
+  /* ---------- Position init / react to size changes (no recenter on resize) ---------- */
+  useEffect(() => {
+    // image
+    const px = fromNorm(posN.nx, posN.ny);
+    const p = clampPosImage(px.x, px.y, false);
+    setPos(p);
+    setPosN(toNorm(p.x, p.y));
+    // text
+    const tx = fromNorm(textPosN.nx, textPosN.ny);
+    const tp = clampPosText(tx.x, tx.y, false);
+    setTextPos(tp);
+    setTextPosN(toNorm(tp.x, tp.y));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeRect.x, safeRect.y, safeRect.w, safeRect.h, designWidthPx, designHeightPx, rotationDeg, textDims.w, textDims.h, textRotationDeg]);
 
   const centerDesign = () => {
-    setPos({ x: safeRect.x + safeRect.w / 2, y: safeRect.y + safeRect.h / 2 });
+    const p = clampPosImage(safeRect.x + safeRect.w / 2, safeRect.y + safeRect.h / 2, false);
+    setPos(p);
+    setPosN(toNorm(p.x, p.y));
+  };
+  const centerText = () => {
+    const p = clampPosText(safeRect.x + safeRect.w / 2, safeRect.y + safeRect.h / 2, false);
+    setTextPos(p);
+    setTextPosN(toNorm(p.x, p.y));
   };
 
+  // mount: center both once (no window resize recenter)
   useEffect(() => {
     centerDesign();
-    const onResize = () => centerDesign();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    centerText();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chosenImage]);
 
+  /* ---------- Enforce max scale based on rotation + safeRect ---------- */
+  const maxImageScalePct = useMemo(() => {
+    if (!containerW) return 200;
+    const k = (containerW * 0.8) / 100; // width per 1% scale
+    const c = Math.abs(Math.cos(rad(rotationDeg)));
+    const s = Math.abs(Math.sin(rad(rotationDeg)));
+    const a = c + s * imgRatio;
+    const b = s + c * imgRatio;
+    if (!a || !b) return 200;
+    const byW = safeRect.w / (k * a);
+    const byH = safeRect.h / (k * b);
+    return clamp(Math.floor(Math.min(byW, byH)), 10, 200);
+  }, [containerW, rotationDeg, imgRatio, safeRect.w, safeRect.h]);
+
   useEffect(() => {
-    setPos((p) => clampCenterToSafe(p.x, p.y));
+    // shrink image scale if rotation or size reduces capacity
+    setScalePct((s) => clamp(s, 10, maxImageScalePct));
+    // position might need clamping after scale cap
+    setPos((p) => {
+      const np = clampPosImage(p.x, p.y, false);
+      setPosN(toNorm(np.x, np.y));
+      return np;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [designWidthPx, designHeightPx]);
+  }, [maxImageScalePct]);
+
+  const maxTextScaleAbs = useMemo(() => {
+    // based on current measured textDims (linear in scale), compute absolute max scale
+    const { halfW, halfH } = rotatedHalfExtents(textDims.w, textDims.h, textRotationDeg);
+    if (halfW * 2 === 0 || halfH * 2 === 0) return 300;
+    // current rotated full sizes:
+    const Wrot = halfW * 2;
+    const Hrot = halfH * 2;
+    const fW = safeRect.w / Wrot;
+    const fH = safeRect.h / Hrot;
+    const f = Math.min(fW, fH);
+    // if f < 1 we need to shrink; if >1 we can grow up to that factor
+    const maxAbs = textScalePct * f;
+    return clamp(Math.floor(maxAbs), 10, 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textDims.w, textDims.h, textRotationDeg, safeRect.w, safeRect.h]);
+
+  useEffect(() => {
+    setTextScalePct((s) => clamp(s, 10, maxTextScaleAbs));
+    setTextPos((p) => {
+      const np = clampPosText(p.x, p.y, false);
+      setTextPosN(toNorm(np.x, np.y));
+      return np;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxTextScaleAbs]);
 
   /* ---------- Mockup src ---------- */
   const teeSrc = useMemo(() => {
     return (TEE_MAP[side] && TEE_MAP[side][color]) || TEE_FALLBACK;
   }, [side, color]);
 
-  /* ---------- Pointer logic ---------- */
+  /* ---------- Pointer helpers ---------- */
   const getLocalXY = (e: PointerEvent | React.PointerEvent) => {
     const rect = containerRef.current!.getBoundingClientRect();
     return {
@@ -264,7 +445,9 @@ export default function EditPage() {
   const angleTo = (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.atan2(to.y - from.y, to.x - from.x);
 
+  /* ---------- Image layer pointer logic ---------- */
   const onDesignPointerDown = (e: React.PointerEvent) => {
+    setTextHasFocus(false);
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     modeRef.current = "drag";
@@ -278,7 +461,9 @@ export default function EditPage() {
       pointers.current.set(e.pointerId, getLocalXY(e));
     if (modeRef.current === "drag") {
       const p = getLocalXY(e);
-      setPos(clampCenterToSafe(p.x - gesture.current.startX, p.y - gesture.current.startY));
+      const np = clampPosImage(p.x - gesture.current.startX, p.y - gesture.current.startY, true);
+      setPos(np);
+      setPosN(toNorm(np.x, np.y));
     }
     if (pointers.current.size >= 2) {
       const [a, b] = Array.from(pointers.current.values()).slice(0, 2);
@@ -288,8 +473,15 @@ export default function EditPage() {
         gesture.current.startScale = scalePct;
       } else {
         const factor = dist(a, b) / Math.max(1, gesture.current.startDist);
-        const next = clamp(Math.round(gesture.current.startScale * factor), 10, 200);
+        let next = clamp(Math.round(gesture.current.startScale * factor), 10, 200);
+        next = Math.min(next, maxImageScalePct);
         setScalePct(next);
+        // clamp position after scale
+        setPos((p) => {
+          const cp = clampPosImage(p.x, p.y, false);
+          setPosN(toNorm(cp.x, cp.y));
+          return cp;
+        });
       }
     }
   };
@@ -300,7 +492,7 @@ export default function EditPage() {
     if (modeRef.current === "drag") modeRef.current = "none";
   };
 
-  /* ---------- Scale/Rotate ---------- */
+  /* ---------- Image scale/rotate ---------- */
   const onScaleHandleDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -314,8 +506,14 @@ export default function EditPage() {
     if (modeRef.current !== "scale") return;
     const p = getLocalXY(e);
     const f = dist({ x: pos.x, y: pos.y }, p) / Math.max(1, gesture.current.startDist);
-    const next = clamp(Math.round(gesture.current.startScale * f), 10, 200);
+    let next = clamp(Math.round(gesture.current.startScale * f), 10, 200);
+    next = Math.min(next, maxImageScalePct);
     setScalePct(next);
+    setPos((pp) => {
+      const cp = clampPosImage(pp.x, pp.y, false);
+      setPosN(toNorm(cp.x, cp.y));
+      return cp;
+    });
   };
   const onScaleHandleUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
@@ -340,36 +538,123 @@ export default function EditPage() {
     const a = angleTo({ x: pos.x, y: pos.y }, p);
     const deltaDeg = deg(a - gesture.current.startAngle);
     let next = gesture.current.startRotation + deltaDeg;
-    if (e.shiftKey) {
-      next = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
-    } else {
-      const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
-      if (Math.abs(nearest - next) <= MAGNET) next = nearest;
-    }
+    const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+    if (Math.abs(nearest - next) <= MAGNET) next = nearest;
     next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
+    // rotation may reduce fit; cap scale & clamp pos
+    setScalePct((s) => Math.min(s, maxImageScalePct));
+    setPos((pp) => {
+      const cp = clampPosImage(pp.x, pp.y, false);
+      setPosN(toNorm(cp.x, cp.y));
+      return cp;
+    });
   };
   const onRotateHandleUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture?.(e.pointerId);
     if (modeRef.current === "rotate") modeRef.current = "none";
   };
 
-  /* ---------- Wheel zoom ---------- */
+  /* ---------- Text layer pointer logic ---------- */
+  const onTextPointerDown = (e: React.PointerEvent) => {
+    if (!textEnabled) return;
+    setTextHasFocus(true);
+    e.preventDefault();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    textModeRef.current = "drag";
+    const p = getLocalXY(e);
+    textGesture.current.startX = p.x - textPos.x;
+    textGesture.current.startY = p.y - textPos.y;
+  };
+  const onTextPointerMove = (e: React.PointerEvent) => {
+    if (!textEnabled || textModeRef.current !== "drag") return;
+    const p = getLocalXY(e);
+    const np = clampPosText(p.x - textGesture.current.startX, p.y - textGesture.current.startY, true);
+    setTextPos(np);
+    setTextPosN(toNorm(np.x, np.y));
+  };
+  const onTextPointerUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (textModeRef.current === "drag") textModeRef.current = "none";
+  };
+
+  const onTextScaleDown = (e: React.PointerEvent) => {
+    if (!textEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    textModeRef.current = "scale";
+    const p = getLocalXY(e);
+    textGesture.current.startDist = dist({ x: textPos.x, y: textPos.y }, p);
+    textGesture.current.startScale = textScalePct;
+  };
+  const onTextScaleMove = (e: React.PointerEvent) => {
+    if (!textEnabled || textModeRef.current !== "scale") return;
+    const p = getLocalXY(e);
+    const f = dist({ x: textPos.x, y: textPos.y }, p) / Math.max(1, textGesture.current.startDist);
+    let next = clamp(Math.round(textGesture.current.startScale * f), 10, 300);
+    // cap based on safeRect using current rotated extents
+    next = Math.min(next, maxTextScaleAbs);
+    setTextScalePct(next);
+    setTextPos((pp) => {
+      const cp = clampPosText(pp.x, pp.y, false);
+      setTextPosN(toNorm(cp.x, cp.y));
+      return cp;
+    });
+  };
+  const onTextScaleUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (textModeRef.current === "scale") textModeRef.current = "none";
+  };
+
+  const onTextRotateDown = (e: React.PointerEvent) => {
+    if (!textEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    textModeRef.current = "rotate";
+    const p = getLocalXY(e);
+    textGesture.current.startAngle = angleTo({ x: textPos.x, y: textPos.y }, p);
+    textGesture.current.startRotation = textRotationDeg;
+  };
+  const onTextRotateMove = (e: React.PointerEvent) => {
+    if (!textEnabled || textModeRef.current !== "rotate") return;
+    const p = getLocalXY(e);
+    const a = angleTo({ x: textPos.x, y: textPos.y }, p);
+    const deltaDeg = deg(a - textGesture.current.startAngle);
+    let next = textGesture.current.startRotation + deltaDeg;
+    const nearest = Math.round(next / SNAP_ANGLE) * SNAP_ANGLE;
+    if (Math.abs(nearest - next) <= MAGNET) next = nearest;
+    next = clamp(Math.round(next), -45, 45);
+    setTextRotationDeg(next);
+    setTextScalePct((s) => Math.min(s, maxTextScaleAbs));
+    setTextPos((pp) => {
+      const cp = clampPosText(pp.x, pp.y, false);
+      setTextPosN(toNorm(cp.x, cp.y));
+      return cp;
+    });
+  };
+  const onTextRotateUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (textModeRef.current === "rotate") textModeRef.current = "none";
+  };
+
+  /* ---------- Wheel zoom (image) ---------- */
   const onWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey) return;
     e.preventDefault();
     const delta = e.deltaY;
-    const next = clamp(scalePct + (delta > 0 ? -3 : 3), 10, 200);
+    let next = clamp(scalePct + (delta > 0 ? -3 : 3), 10, 200);
+    next = Math.min(next, maxImageScalePct);
     setScalePct(next);
+    setPos((p) => {
+      const cp = clampPosImage(p.x, p.y, false);
+      setPosN(toNorm(cp.x, cp.y));
+      return cp;
+    });
   };
 
   /* ---------- Undo/Redo ---------- */
-  const isTextInput = (el: Element | null) =>
-    !!el &&
-    (el.tagName === "INPUT" ||
-      el.tagName === "TEXTAREA" ||
-      (el as HTMLElement).isContentEditable);
-
   const history = useRef<Snapshot[]>([]);
   const index = useRef<number>(-1);
   const applyingHistory = useRef(false);
@@ -392,6 +677,7 @@ export default function EditPage() {
   const applySnapshot = (s: Snapshot) => {
     applyingHistory.current = true;
     setPos({ x: s.x, y: s.y });
+    setPosN(toNorm(s.x, s.y));
     setScalePct(s.scalePct);
     setRotationDeg(s.rotationDeg);
     setOpacity(s.opacity);
@@ -466,7 +752,7 @@ export default function EditPage() {
     [unitPrice, qty]
   );
 
-  /* ---------- Download mockup JPG ---------- */
+  /* ---------- Download mockup JPG (includes text if enabled) ---------- */
   const downloadJPG = async () => {
     try {
       if (!containerRef.current) return;
@@ -509,6 +795,22 @@ export default function EditPage() {
       ctx.drawImage(art, -designWidthPx / 2, -designHeightPx / 2, designWidthPx, designHeightPx);
       ctx.restore();
       ctx.globalAlpha = 1;
+
+      if (textEnabled && (text || "").trim().length > 0) {
+        const baseFS = Math.max(12, Math.round(W * 0.08));
+        const fs = Math.max(12, Math.round(baseFS * (textScalePct / 100)));
+        ctx.save();
+        ctx.translate(textPos.x, textPos.y);
+        ctx.rotate(rad(textRotationDeg));
+        ctx.globalAlpha = textOpacity / 100;
+        ctx.font = `700 ${fs}px ${textFont}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = textColor;
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
 
       const url = canvas.toDataURL("image/jpeg", 0.9);
       const a = document.createElement("a");
@@ -635,19 +937,17 @@ export default function EditPage() {
       if (j.url) {
         // If the app is embedded (iframe?embed=1), open Stripe in the top window.
         const isEmbedded =
-        typeof window !== "undefined" &&
-        new URLSearchParams(window.location.search).get("embed") === "1";
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("embed") === "1";
 
-      if (isEmbedded) {
-        window.top?.location.assign(j.url);
+        if (isEmbedded) {
+          window.top?.location.assign(j.url);
+        } else {
+          window.location.assign(j.url);
+        }
       } else {
-        window.location.assign(j.url);
+        alert(j.error || "Checkout failed.");
       }
-    } else {
-      alert(j.error || "Checkout failed.");
-    }
-
-
     } catch (e) {
       console.error(e);
       alert(`Could not prepare print file: ${String(e)}`);
@@ -722,6 +1022,7 @@ export default function EditPage() {
                 />
               )}
 
+              {/* IMAGE LAYER */}
               <div
                 className="absolute"
                 style={{
@@ -777,6 +1078,73 @@ export default function EditPage() {
                   title="Drag to rotate (hold Shift to snap)"
                 />
               </div>
+
+              {/* TEXT LAYER (above image) */}
+              {textEnabled && (text || "").trim().length > 0 && (
+                <div
+                  className="absolute"
+                  style={{
+                    left: `${textPos.x}px`,
+                    top: `${textPos.y}px`,
+                    width: `${textDims.w}px`,
+                    height: `${textDims.h}px`,
+                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
+                    touchAction: "none",
+                  }}
+                >
+                  <div
+                    onPointerDown={onTextPointerDown}
+                    onPointerMove={onTextPointerMove}
+                    onPointerUp={onTextPointerUp}
+                    className="h-full w-full select-none cursor-move"
+                    style={{
+                      opacity: textOpacity / 100,
+                      display: "grid",
+                      placeItems: "center",
+                      fontFamily: textFont,
+                      fontWeight: 700,
+                      fontSize: `${textFontSizePx}px`,
+                      lineHeight: 1.2,
+                      color: textColor,
+                      userSelect: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {text}
+                  </div>
+
+                  {/* selection ring */}
+                  <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
+
+                  {/* handles (only show when focused to avoid clutter) */}
+                  {textHasFocus && (
+                    <>
+                      {[
+                        { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
+                        { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
+                        { k: "bl", style: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2" },
+                        { k: "br", style: "right-0 bottom-0 translate-x-1/2 translate-y-1/2" },
+                      ].map((h) => (
+                        <div
+                          key={h.k}
+                          onPointerDown={onTextScaleDown}
+                          onPointerMove={onTextScaleMove}
+                          onPointerUp={onTextScaleUp}
+                          className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
+                          title="Drag to scale"
+                        />
+                      ))}
+                      <div
+                        onPointerDown={onTextRotateDown}
+                        onPointerMove={onTextRotateMove}
+                        onPointerUp={onTextRotateUp}
+                        className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
+                        title="Drag to rotate"
+                      />
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -797,54 +1165,204 @@ export default function EditPage() {
               </div>
             </div>
 
-            <div className="grid gap-5">
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>Scale</span>
-                  <span className="tabular-nums">{scalePct}%</span>
-                </div>
-                <Slider
-                  value={[scalePct]}
-                  min={10}
-                  max={200}
-                  step={1}
-                  onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
-                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                />
+            {/* NEW: Text controls */}
+            <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Text</span>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!textEnabled) centerText();
+                    setTextEnabled((v) => !v);
+                    setTextHasFocus(true);
+                  }}
+                >
+                  {textEnabled ? "Remove" : "Add Text"}
+                </Button>
               </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>Rotation</span>
-                  <span className="tabular-nums">{rotationDeg}°</span>
-                </div>
-                <Slider
-                  value={[rotationDeg]}
-                  min={-45}
-                  max={45}
-                  step={1}
-                  onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
-                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                />
-              </div>
+              {textEnabled && (
+                <div className="grid gap-4">
+                  {/* Content */}
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <span className="text-sm">Content</span>
+                    <input
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      placeholder="Your text"
+                      className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>Opacity</span>
-                  <span className="tabular-nums">{opacity}%</span>
+                  {/* Font */}
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="text-sm sm:w-20 sm:shrink-0">Font</span>
+                    <select
+                      value={textFont}
+                      onChange={(e) => setTextFont(e.target.value)}
+                      className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                    >
+                      {TEXT_FONTS.map((f) => (
+                        <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Color */}
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="text-sm sm:w-20 sm:shrink-0">Color</span>
+                    <div className="flex flex-wrap gap-2">
+                      {TEXT_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setTextColor(c)}
+                          className={`h-7 w-7 rounded-full border transition ${
+                            textColor === c ? "ring-2 ring-[#007AFF]" : ""
+                          }`}
+                          style={{
+                            background: c,
+                            borderColor: c.toLowerCase() === "#ffffff" ? "#e5e7eb" : "transparent",
+                          }}
+                          title={c}
+                        />
+                      ))}
+                      <input
+                        type="text"
+                        className="w-28 rounded-lg border bg-white px-2 py-1 text-xs"
+                        value={textColor}
+                        onChange={(e) => setTextColor(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Text fine-tune */}
+                  <details className="rounded-xl border bg-white p-3">
+                    <summary className="cursor-pointer select-none text-sm font-medium">
+                      Text fine-tune
+                    </summary>
+                    <div className="mt-3 grid gap-4">
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span>Scale</span>
+                          <span className="tabular-nums">{textScalePct}%</span>
+                        </div>
+                        <Slider
+                          value={[textScalePct]}
+                          min={10}
+                          max={300}
+                          step={1}
+                          onValueChange={(v) =>
+                            setTextScalePct(clamp(v[0] ?? textScalePct, 10, maxTextScaleAbs))
+                          }
+                          className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span>Rotation</span>
+                          <span className="tabular-nums">{textRotationDeg}°</span>
+                        </div>
+                        <Slider
+                          value={[textRotationDeg]}
+                          min={-45}
+                          max={45}
+                          step={1}
+                          onValueChange={(v) => setTextRotationDeg(v[0] ?? textRotationDeg)}
+                          className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span>Opacity</span>
+                          <span className="tabular-nums">{textOpacity}%</span>
+                        </div>
+                        <Slider
+                          value={[textOpacity]}
+                          min={10}
+                          max={100}
+                          step={1}
+                          onValueChange={(v) => setTextOpacity(v[0] ?? textOpacity)}
+                          className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setTextScalePct(60);
+                            setTextRotationDeg(0);
+                            setTextOpacity(100);
+                            centerText();
+                          }}
+                        >
+                          Reset text
+                        </Button>
+                      </div>
+                    </div>
+                  </details>
                 </div>
-                <Slider
-                  value={[opacity]}
-                  min={10}
-                  max={100}
-                  step={1}
-                  onValueChange={(v) => setOpacity(v[0] ?? opacity)}
-                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                />
-              </div>
+              )}
             </div>
 
-            <div className="mt-6 grid gap-4">
+            {/* Fine-tune (image) — unchanged visually */}
+            <details className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <summary className="cursor-pointer select-none font-medium">
+                Fine-tune (image)
+              </summary>
+              <div className="mt-4 grid gap-5">
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Scale</span>
+                    <span className="tabular-nums">{scalePct}%</span>
+                  </div>
+                  <Slider
+                    value={[scalePct]}
+                    min={10}
+                    max={200}
+                    step={1}
+                    onValueChange={(v) =>
+                      setScalePct(clamp(v[0] ?? scalePct, 10, maxImageScalePct))
+                    }
+                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Rotation</span>
+                    <span className="tabular-nums">{rotationDeg}°</span>
+                  </div>
+                  <Slider
+                    value={[rotationDeg]}
+                    min={-45}
+                    max={45}
+                    step={1}
+                    onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
+                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Opacity</span>
+                    <span className="tabular-nums">{opacity}%</span>
+                  </div>
+                  <Slider
+                    value={[opacity]}
+                    min={10}
+                    max={100}
+                    step={1}
+                    onValueChange={(v) => setOpacity(v[0] ?? opacity)}
+                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                  />
+                </div>
+              </div>
+            </details>
+
+            {/* Product options (unchanged) */}
+            <div className="mt-0 grid gap-4">
               {/* Side */}
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Side</span>
@@ -1012,7 +1530,7 @@ export default function EditPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setScalePct(60);
+                    setScalePct((s) => clamp(60, 10, maxImageScalePct));
                     setRotationDeg(0);
                     setOpacity(100);
                     centerDesign();
