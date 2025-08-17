@@ -572,7 +572,7 @@ export default function EditPage() {
     }
   }
 
-  // NEW: ensure we have a print file before checkout
+  // ensure we have a print file before checkout
   async function ensurePrintFile(): Promise<string> {
     if (printFileUrl) return printFileUrl;
     if (!chosenImage) throw new Error("No design image loaded.");
@@ -607,7 +607,6 @@ export default function EditPage() {
   /* ---------- Proceed to payment (Stripe) ---------- */
   async function handleCheckout() {
     try {
-      // Auto-create the print file if needed
       const url = await ensurePrintFile();
 
       const payload = {
@@ -630,12 +629,25 @@ export default function EditPage() {
         alert("Checkout failed.");
         return;
       }
+
       const j = (await res.json()) as { url?: string; error?: string };
+
       if (j.url) {
-        window.location.href = j.url;
+        // If the app is embedded (iframe?embed=1), open Stripe in the top window.
+        const isEmbedded =
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("embed") === "1";
+
+      if (isEmbedded) {
+        window.top?.location.assign(j.url);
       } else {
-        alert(j.error || "Checkout failed.");
+        window.location.assign(j.url);
       }
+    } else {
+      alert(j.error || "Checkout failed.");
+    }
+
+
     } catch (e) {
       console.error(e);
       alert(`Could not prepare print file: ${String(e)}`);
@@ -646,7 +658,7 @@ export default function EditPage() {
     return (
       <>
         <Stepper current={2} />
-        <div className="rounded-2xl border bg-white p-6 text-zinc-600 shadow-sm">
+        <div className="rounded-2xl border bg-white p-6 text-[#222222] shadow-sm">
           No design selected. Go to{" "}
           <Link href="/generate" className="underline">
             Generate
@@ -663,345 +675,380 @@ export default function EditPage() {
     <>
       <Stepper current={2} />
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        {/* Canvas */}
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div
-            ref={containerRef}
-            onWheel={onWheel}
-            className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
-          >
-            {!allLoaded && (
-              <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
-                <div className="animate-pulse rounded-xl bg-zinc-200 p-6 text-sm text-zinc-600">
-                  Preparing editor <Dots />
+      {/* limit width to viewport & prevent horizontal scroll on mobile */}
+      <div className="text-[#222222]">
+        <div className="grid max-w-[100vw] gap-6 overflow-x-hidden px-3 pb-24 lg:grid-cols-[1.1fr_0.9fr] lg:px-0 lg:pb-0">
+          {/* Canvas */}
+          <div className="min-w-0 rounded-2xl border bg-white p-5 shadow-sm">
+            <div
+              ref={containerRef}
+              onWheel={onWheel}
+              className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
+            >
+              {!allLoaded && (
+                <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
+                  <div className="animate-pulse rounded-xl bg-zinc-200 p-6 text-sm">
+                    Preparing editor <Dots />
+                  </div>
+                </div>
+              )}
+
+              <img
+                ref={teeImgRef}
+                src={teeSrc}
+                alt={`T-shirt mockup (${color} ${side})`}
+                draggable={false}
+                onLoad={(e) => {
+                  setTeeLoaded(true);
+                  const i = e.currentTarget as HTMLImageElement;
+                  if (i.naturalWidth) setTeeRatio(i.naturalHeight / i.naturalWidth);
+                }}
+                onDragStart={(e) => e.preventDefault()}
+                className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none"
+              />
+
+              <div className="pointer-events-none absolute left-1/2 top-[34%] h-[45%] w-[65%] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-dashed border-black/10" />
+
+              {vGuide !== null && (
+                <div
+                  className="pointer-events-none absolute top-0 h-full w-px bg-black/20"
+                  style={{ left: vGuide }}
+                />
+              )}
+              {hGuide !== null && (
+                <div
+                  className="pointer-events-none absolute left-0 w-full border-t border-black/20"
+                  style={{ top: hGuide }}
+                />
+              )}
+
+              <div
+                className="absolute"
+                style={{
+                  left: `${pos.x}px`,
+                  top: `${pos.y}px`,
+                  width: `${designWidthPx}px`,
+                  height: `${designHeightPx}px`,
+                  transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
+                  touchAction: "none",
+                }}
+              >
+                <img
+                  src={chosenImage}
+                  alt="Design"
+                  onLoad={(e) => {
+                    setArtLoaded(true);
+                    const i = e.currentTarget;
+                    setImgRatio(i.naturalHeight / i.naturalWidth || 1);
+                    centerDesign();
+                  }}
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                  onPointerDown={onDesignPointerDown}
+                  onPointerMove={onDesignPointerMove}
+                  onPointerUp={onDesignPointerUp}
+                  className="h-full w-full select-none cursor-move rounded-sm shadow-sm"
+                  style={{ opacity: opacity / 100 }}
+                />
+
+                <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
+
+                {[
+                  { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
+                  { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
+                  { k: "bl", style: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2" },
+                  { k: "br", style: "right-0 bottom-0 translate-x-1/2 translate-y-1/2" },
+                ].map((h) => (
+                  <div
+                    key={h.k}
+                    onPointerDown={onScaleHandleDown}
+                    onPointerMove={onScaleHandleMove}
+                    onPointerUp={onScaleHandleUp}
+                    className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
+                    title="Drag to scale"
+                  />
+                ))}
+
+                <div
+                  onPointerDown={onRotateHandleDown}
+                  onPointerMove={onRotateHandleMove}
+                  onPointerUp={onRotateHandleUp}
+                  className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
+                  title="Drag to rotate (hold Shift to snap)"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="min-w-0 rounded-2xl border bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap">
+              <h2 className="text-lg font-semibold">Adjust & Options</h2>
+              <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                <Button variant="outline" onClick={undo} disabled={!canUndo}>
+                  Undo
+                </Button>
+                <Button variant="outline" onClick={redo} disabled={!canRedo}>
+                  Redo
+                </Button>
+                <Button variant="outline" onClick={downloadJPG}>
+                  Mockup JPG
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-5">
+              <div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span>Scale</span>
+                  <span className="tabular-nums">{scalePct}%</span>
+                </div>
+                <Slider
+                  value={[scalePct]}
+                  min={10}
+                  max={200}
+                  step={1}
+                  onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
+                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span>Rotation</span>
+                  <span className="tabular-nums">{rotationDeg}°</span>
+                </div>
+                <Slider
+                  value={[rotationDeg]}
+                  min={-45}
+                  max={45}
+                  step={1}
+                  onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
+                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span>Opacity</span>
+                  <span className="tabular-nums">{opacity}%</span>
+                </div>
+                <Slider
+                  value={[opacity]}
+                  min={10}
+                  max={100}
+                  step={1}
+                  onValueChange={(v) => setOpacity(v[0] ?? opacity)}
+                  className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4">
+              {/* Side */}
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm sm:w-20 sm:shrink-0">Side</span>
+                <div className="flex flex-wrap gap-2">
+                  {(["front", "back"] as Side[]).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSide(s)}
+                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                        s === side
+                          ? "border-2 border-[#007AFF] bg-white"
+                          : "border bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
 
-            <img
-              ref={teeImgRef}
-              src={teeSrc}
-              alt={`T-shirt mockup (${color} ${side})`}
-              draggable={false}
-              onLoad={(e) => {
-                setTeeLoaded(true);
-                const i = e.currentTarget as HTMLImageElement;
-                if (i.naturalWidth) setTeeRatio(i.naturalHeight / i.naturalWidth);
-              }}
-              onDragStart={(e) => e.preventDefault()}
-              className="pointer-events-none absolute left-1/2 top-1/2 w-[90%] -translate-x-1/2 -translate-y-1/2 select-none"
-            />
+              {/* Color */}
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm sm:w-20 sm:shrink-0">Color</span>
+                <div className="flex flex-wrap gap-2">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setColor(c)}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
+                        color === c ? "ring-2 ring-[#007AFF]" : ""
+                      }`}
+                      title={c}
+                    >
+                      <span
+                        className="inline-block h-4 w-4 rounded-full border"
+                        style={{
+                          background: c === "white" ? "#fff" : c === "black" ? "#111" : "#000080",
+                          borderColor: c === "white" ? "#e5e7eb" : "transparent",
+                        }}
+                      />
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="pointer-events-none absolute left-1/2 top-[34%] h-[45%] w-[65%] -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-dashed border-black/10" />
+              {/* Size */}
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm sm:w-20 sm:shrink-0">Size</span>
+                <div className="flex flex-wrap gap-2">
+                  {SIZES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSize(s)}
+                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                        size === s
+                          ? "border-2 border-[#007AFF] bg-white"
+                          : "border bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            {vGuide !== null && (
-              <div
-                className="pointer-events-none absolute top-0 h-full w-px bg-black/20"
-                style={{ left: vGuide }}
-              />
-            )}
-            {hGuide !== null && (
-              <div
-                className="pointer-events-none absolute left-0 w-full border-t border-black/20"
-                style={{ top: hGuide }}
-              />
-            )}
+              {/* Material */}
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm sm:w-20 sm:shrink-0">Material</span>
+                <div className="flex flex-wrap gap-2">
+                  {MATERIALS.map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMaterial(m)}
+                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                        material === m
+                          ? "border-2 border-[#007AFF] bg-white"
+                          : "border bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div
-              className="absolute"
-              style={{
-                left: `${pos.x}px`,
-                top: `${pos.y}px`,
-                width: `${designWidthPx}px`,
-                height: `${designHeightPx}px`,
-                transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
-                touchAction: "none",
-              }}
-            >
-              <img
-                src={chosenImage}
-                alt="Design"
-                onLoad={(e) => {
-                  setArtLoaded(true);
-                  const i = e.currentTarget;
-                  setImgRatio(i.naturalHeight / i.naturalWidth || 1);
-                  centerDesign();
-                }}
-                draggable={false}
-                onDragStart={(e) => e.preventDefault()}
-                onPointerDown={onDesignPointerDown}
-                onPointerMove={onDesignPointerMove}
-                onPointerUp={onDesignPointerUp}
-                className="h-full w-full select-none cursor-move rounded-sm shadow-sm"
-                style={{ opacity: opacity / 100 }}
-              />
+              {/* Quantity */}
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm sm:w-20 sm:shrink-0">Quantity</span>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
+                    −
+                  </Button>
+                  <span className="w-10 text-center tabular-nums">{qty}</span>
+                  <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
+                    +
+                  </Button>
+                </div>
+              </div>
+            </div>
 
-              <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
+            {/* Advanced (accordion) */}
+            <details className="mt-6 rounded-xl border bg-zinc-50 p-4">
+              <summary className="cursor-pointer select-none font-medium">
+                Advanced
+                <span className="ml-2 align-middle text-xs">
+                  {printFileUrl ? (
+                    <a
+                      href={printFileUrl}
+                      className="underline"
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Print file saved
+                    </a>
+                  ) : (
+                    " (no print file saved)"
+                  )}
+                </span>
+              </summary>
 
-              {[
-                { k: "tl", style: "left-0 top-0 -translate-x-1/2 -translate-y-1/2" },
-                { k: "tr", style: "right-0 top-0 translate-x-1/2 -translate-y-1/2" },
-                { k: "bl", style: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2" },
-                { k: "br", style: "right-0 bottom-0 translate-x-1/2 translate-y-1/2" },
-              ].map((h) => (
-                <div
-                  key={h.k}
-                  onPointerDown={onScaleHandleDown}
-                  onPointerMove={onScaleHandleMove}
-                  onPointerUp={onScaleHandleUp}
-                  className={`absolute ${h.style} z-10 h-4 w-4 cursor-nwse-resize rounded-sm border border-white bg-black`}
-                  title="Drag to scale"
-                />
-              ))}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="outline" onClick={handleSavePrintFile} disabled={savingPrint}>
+                  {savingPrint ? "Saving…" : "Save print file (URL)"}
+                </Button>
+              </div>
+            </details>
 
-              <div
-                onPointerDown={onRotateHandleDown}
-                onPointerMove={onRotateHandleMove}
-                onPointerUp={onRotateHandleUp}
-                className="absolute left-1/2 top-0 z-10 h-3 w-3 -translate-x-1/2 -translate-y-6 cursor-grab rounded-full border border-white bg-black"
-                title="Drag to rotate (hold Shift to snap)"
-              />
+            {/* Pricing summary */}
+            <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span>Base ({material})</span>
+                <span>{gbp.format(BASE_PRICE_MATERIAL[material])}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span>Colour adj. ({color})</span>
+                <span>{gbp.format(COLOR_SURCHARGE[color])}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span>Size adj. ({size})</span>
+                <span>{gbp.format(SIZE_SURCHARGE[size] ?? 0)}</span>
+              </div>
+              <div className="my-3 h-px w-full bg-zinc-200" />
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Unit price</span>
+                <span className="font-semibold">{gbp.format(unitPrice)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-sm">Quantity</span>
+                <span className="tabular-nums">{qty}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-lg font-semibold">
+                <span>Total</span>
+                <span>{gbp.format(totalPrice)}</span>
+              </div>
+            </div>
+
+            {/* Footer actions */}
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
+              <Link href="/generate" className="text-sm underline">
+                ← Back to Generate
+              </Link>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setScalePct(60);
+                    setRotationDeg(0);
+                    setOpacity(100);
+                    centerDesign();
+                  }}
+                >
+                  Reset
+                </Button>
+                <Button
+                  className="rounded-xl bg-[#FF375F] px-6 text-white hover:bg-[#e23355]"
+                  onClick={handleCheckout}
+                  disabled={savingPrint}
+                  title={savingPrint ? "Preparing print file…" : ""}
+                >
+                  {savingPrint ? "Preparing…" : "Proceed to payment →"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Adjust & Options</h2>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={undo} disabled={!canUndo}>
-                Undo
-              </Button>
-              <Button variant="outline" onClick={redo} disabled={!canRedo}>
-                Redo
-              </Button>
-              <Button variant="outline" onClick={downloadJPG}>
-                Mockup JPG
-              </Button>
-            </div>
+        {/* Mobile sticky checkout */}
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-white/60 lg:hidden">
+          <div className="mx-auto flex w-full max-w-screen-sm items-center justify-between gap-3">
+            <span className="text-sm">
+              Total {gbp.format(totalPrice)}
+            </span>
+            <Button
+              className="rounded-xl bg-[#FF375F] px-6 text-white hover:bg-[#e23355]"
+              onClick={handleCheckout}
+              disabled={savingPrint}
+              title={savingPrint ? "Preparing print file…" : ""}
+            >
+              {savingPrint ? "Preparing…" : "Proceed to payment →"}
+            </Button>
           </div>
-
-          <div className="grid gap-5">
-            <div>
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="text-zinc-600">Scale</span>
-                <span className="tabular-nums text-zinc-500">{scalePct}%</span>
-              </div>
-              <Slider
-                value={[scalePct]}
-                min={10}
-                max={200}
-                step={1}
-                onValueChange={(v) => setScalePct(v[0] ?? scalePct)}
-              />
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="text-zinc-600">Rotation</span>
-                <span className="tabular-nums text-zinc-500">{rotationDeg}°</span>
-              </div>
-              <Slider
-                value={[rotationDeg]}
-                min={-45}
-                max={45}
-                step={1}
-                onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
-              />
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="text-zinc-600">Opacity</span>
-                <span className="tabular-nums text-zinc-500">{opacity}%</span>
-              </div>
-              <Slider
-                value={[opacity]}
-                min={10}
-                max={100}
-                step={1}
-                onValueChange={(v) => setOpacity(v[0] ?? opacity)}
-              />
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Side</span>
-              <div className="flex gap-2">
-                {(["front", "back"] as Side[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSide(s)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      s === side ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Color</span>
-              <div className="flex gap-2">
-                {COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
-                      color === c ? "ring-2 ring-black" : ""
-                    }`}
-                    title={c}
-                  >
-                    <span
-                      className="inline-block h-4 w-4 rounded-full border"
-                      style={{
-                        background: c === "white" ? "#fff" : c === "black" ? "#111" : "#000080",
-                        borderColor: c === "white" ? "#e5e7eb" : "transparent",
-                      }}
-                    />
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Size</span>
-              <div className="flex flex-wrap gap-2">
-                {SIZES.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSize(s)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      size === s ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Material</span>
-              <div className="flex flex-wrap gap-2">
-                {MATERIALS.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMaterial(m)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      material === m ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="w-20 text-sm text-zinc-600">Quantity</span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => setQty((q) => Math.max(1, q - 1))}>
-                  −
-                </Button>
-                <span className="w-10 text-center tabular-nums">{qty}</span>
-                <Button variant="outline" onClick={() => setQty((q) => q + 1)}>
-                  +
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Advanced (accordion) */}
-          <details className="mt-6 rounded-xl border bg-zinc-50 p-4">
-            <summary className="cursor-pointer select-none font-medium">
-              Advanced
-              <span className="ml-2 align-middle text-xs text-zinc-500">
-                {printFileUrl ? (
-                  <a
-                    href={printFileUrl}
-                    className="underline"
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Print file saved
-                  </a>
-                ) : (
-                  " (no print file saved)"
-                )}
-              </span>
-            </summary>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="outline" onClick={handleSavePrintFile} disabled={savingPrint}>
-                {savingPrint ? "Saving…" : "Save print file (URL)"}
-              </Button>
-            </div>
-          </details>
-
-          {/* Pricing summary */}
-          <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span>Base ({material})</span>
-              <span>{gbp.format(BASE_PRICE_MATERIAL[material])}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span>Colour adj. ({color})</span>
-              <span>{gbp.format(COLOR_SURCHARGE[color])}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span>Size adj. ({size})</span>
-              <span>{gbp.format(SIZE_SURCHARGE[size] ?? 0)}</span>
-            </div>
-            <div className="my-3 h-px w-full bg-zinc-200" />
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-600">Unit price</span>
-              <span className="font-semibold">{gbp.format(unitPrice)}</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between">
-              <span className="text-sm text-zinc-600">Quantity</span>
-              <span className="tabular-nums">{qty}</span>
-            </div>
-            <div className="mt-2 flex items-center justify-between text-lg font-semibold">
-              <span>Total</span>
-              <span>{gbp.format(totalPrice)}</span>
-            </div>
-          </div>
-
-          {/* Footer actions */}
-          <div className="mt-6 flex items-center justify-between">
-            <Link href="/generate" className="text-sm text-zinc-600 underline">
-              ← Back to Generate
-            </Link>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setScalePct(60);
-                  setRotationDeg(0);
-                  setOpacity(100);
-                  centerDesign();
-                }}
-              >
-                Reset
-              </Button>
-              <Button
-                className="rounded-xl bg-black px-6 text-white hover:bg-zinc-900"
-                onClick={handleCheckout}
-                disabled={savingPrint}
-                title={savingPrint ? "Preparing print file…" : ""}
-              >
-                {savingPrint ? "Preparing…" : "Proceed to payment →"}
-              </Button>
-            </div>
-          </div>
+          <div className="h-[env(safe-area-inset-bottom)]" />
         </div>
       </div>
     </>

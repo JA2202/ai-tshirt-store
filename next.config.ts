@@ -1,21 +1,23 @@
+// next.config.ts
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  // Allow this app to be embedded in your marketing site’s iframe
+const config: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: "/(.*)",
         headers: [
+          // Allow only your marketing site(s) to embed the app:
           {
             key: "Content-Security-Policy",
-            // ⚠️ Change to your real parent domains (space-separated)
-            value: "frame-ancestors 'self' https://yourdomain.com https://staging.yourdomain.com",
+            value:
+              "frame-ancestors 'self' http://threadlabs.app/;",
           },
+          // Do NOT set X-Frame-Options: DENY; leave it unset (or SAMEORIGIN if needed).
         ],
       },
     ];
   },
 };
 
-export default nextConfig;
+export default config;

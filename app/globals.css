@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* hide certain chrome when embedded */
+.embed .site-header,
+.embed .site-footer {
+  display: none;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

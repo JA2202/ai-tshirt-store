@@ -101,7 +101,7 @@ export default function GeneratePage() {
     setLoading(true);
     setChosenImage(null);
     setImages([]);
-    setShowRefine(false); // keep folded after each run
+    setShowRefine(false);
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -161,28 +161,19 @@ export default function GeneratePage() {
     <>
       <Stepper current={1} />
 
-      {/* PROMPT BAR */}
-      <section className="rounded-2xl border bg-white p-4 sm:p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Input
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe your design… (e.g. retro wave sunset with palm trees)"
-            className="h-12 w-full rounded-xl text-base"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={onClickGenerate}
-              disabled={!prompt.trim()}
-              className="h-12 rounded-xl bg-black px-5 text-white hover:bg-zinc-900 disabled:opacity-50"
-            >
-              {loading ? <span className="inline-flex items-center gap-2">Generating <Dots/></span> : "Generate"}
-            </Button>
-            <Button variant="outline" onClick={onSurprise} className="h-12 rounded-xl">
-              🎲 Surprise
-            </Button>
+      {/* HERO: Prompt & quick actions */}
+      <section className="mx-auto mt-2 w-full max-w-5xl text-[#222222]">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+            {/* Input */}
+            <Input
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe your design… (e.g. retro wave sunset with palm trees)"
+              className="h-12 w-full rounded-xl text-base"
+            />
 
-            {/* Upload your own design */}
+            {/* Hidden file input (shared) */}
             <input
               ref={fileInputRef}
               type="file"
@@ -190,62 +181,123 @@ export default function GeneratePage() {
               className="hidden"
               onChange={(e) => onDesignUpload(e.target.files?.[0] ?? null)}
             />
-            <Button
-              variant="outline"
-              className="h-12 rounded-xl"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Upload your design
-            </Button>
-          </div>
-        </div>
 
-        {/* Presets / Variants */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPrompt(prompt ? `${prompt}, ${p}` : p)}
-              className="rounded-full border px-3 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-50"
-            >
-              {p}
-            </button>
-          ))}
+            {/* Actions + Variants container */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {/* MOBILE layout */}
+              <div className="flex w-full flex-col gap-2 sm:hidden">
+                <Button
+                  onClick={onClickGenerate}
+                  disabled={!prompt.trim()}
+                  className="h-12 w-full rounded-xl bg-[#FF375F] px-5 text-white hover:bg-[#e03256] disabled:opacity-50"
+                >
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2">
+                      Generating <Dots />
+                    </span>
+                  ) : (
+                    "Generate"
+                  )}
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={onSurprise}
+                    className="h-12 w-1/2 rounded-xl"
+                  >
+                    🎲 Surprise
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-12 w-1/2 rounded-xl"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Upload your design
+                  </Button>
+                </div>
+              </div>
 
-          <div className="mt-2 sm:mt-0 sm:ml-auto flex items-center gap-2 text-sm">
-            <span className="text-zinc-600">Variants</span>
-            {[2, 4, 6, 8].map((n) => (
-              <button
-                key={n}
-                onClick={() => setCount(n)}
-                className={`rounded-full px-3 py-1.5 transition ${
-                  count === n ? "bg-black text-white" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
+              {/* DESKTOP layout */}
+              <div className="hidden flex-wrap items-center gap-2 sm:flex">
+                <Button
+                  onClick={onClickGenerate}
+                  disabled={!prompt.trim()}
+                  className="h-12 rounded-xl bg-[#FF375F] px-5 text-white hover:bg-[#e03256] disabled:opacity-50"
+                >
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2">
+                      Generating <Dots />
+                    </span>
+                  ) : (
+                    "Generate"
+                  )}
+                </Button>
+                <Button variant="outline" onClick={onSurprise} className="h-12 rounded-xl">
+                  🎲 Surprise
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-12 rounded-xl"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Upload your design
+                </Button>
+              </div>
+
+              {/* Variants */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-[#222222]">Variants</span>
+                <div className="flex gap-1.5">
+                  {[2, 4, 6, 8].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setCount(n)}
+                      className={`rounded-full px-3 py-1.5 text-sm transition ${
+                        count === n
+                          ? "bg-black text-white"
+                          : "bg-zinc-100 text-[#222222] hover:bg-zinc-200"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Preset chips — horizontal scroll on small screens */}
+            <div className="-mx-1 mt-1 overflow-x-auto">
+              <div className="flex min-w-full items-center gap-2 px-1">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPrompt(prompt ? `${prompt}, ${p}` : p)}
+                    className="whitespace-nowrap rounded-full border px-3 py-1.5 text-sm text-[#222222] transition hover:bg-zinc-50"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* RESULTS */}
-      <section className="mt-5">
+      <section className="mx-auto mt-5 w-full max-w-5xl text-[#222222]">
         {loading && (
-          <div className="rounded-2xl border bg-white p-4 sm:p-5 shadow-sm">
+          <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               {Array.from({ length: count }).map((_, i) => (
                 <div key={i} className="aspect-square w-full animate-pulse rounded-xl bg-zinc-100" />
               ))}
             </div>
-            <div className="mt-3 text-sm text-zinc-600">
-              Generating images <Dots />
-            </div>
+            <div className="mt-3 text-sm">Generating images <Dots /></div>
           </div>
         )}
 
         {!loading && images.length > 0 && (
-          <div className="rounded-2xl border bg-white p-4 sm:p-5 shadow-sm">
+          <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               {images.map((url, idx) => (
                 <button
@@ -266,16 +318,16 @@ export default function GeneratePage() {
               ))}
             </div>
 
-            {/* Refine (folded) + Continue */}
+            {/* Refine & Continue */}
             <div className="mt-4 rounded-xl border bg-zinc-50 p-3 sm:p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-zinc-700">Want tweaks? Adjust the prompt and regenerate.</p>
+                <p className="text-sm">Want tweaks? Adjust the prompt and regenerate.</p>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setShowRefine((s) => !s)}>
                     {showRefine ? "Hide changes" : "Make changes"}
                   </Button>
                   <Button
-                    disabled={!Boolean(chosenImage)}
+                    disabled={!canContinue}
                     onClick={() => router.push("/edit")}
                     className="rounded-xl bg-black text-white hover:bg-zinc-900 disabled:opacity-40"
                   >
@@ -332,13 +384,13 @@ export default function GeneratePage() {
 
       {/* MODAL: Style / Transparent / Reference */}
       <Dialog open={openModal} onOpenChange={setOpenModal}>
-        <DialogContent className="sm:max-w-lg w-[96vw]">
+        <DialogContent className="w-[96vw] sm:max-w-lg text-[#222222]">
           <DialogHeader>
             <DialogTitle>Style & options</DialogTitle>
           </DialogHeader>
 
           <div className="mt-2">
-            <div className="mb-2 text-sm text-zinc-600">What type of style?</div>
+            <div className="mb-2 text-sm">What type of style?</div>
             <div className="flex flex-wrap gap-2">
               {STYLES.map((s) => (
                 <button
@@ -377,7 +429,7 @@ export default function GeneratePage() {
           </div>
 
           <div className="mt-4">
-            <div className="mb-2 text-sm text-zinc-600">Upload reference (optional)</div>
+            <div className="mb-2 text-sm">Upload reference (optional)</div>
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
@@ -385,14 +437,22 @@ export default function GeneratePage() {
             />
             {refPreview && (
               <div className="mt-2">
-                <img src={refPreview} alt="Reference" className="h-24 w-24 rounded border object-cover" />
+                <img
+                  src={refPreview}
+                  alt="Reference"
+                  className="h-24 w-24 rounded border object-cover"
+                />
               </div>
             )}
           </div>
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setOpenModal(false)}>Cancel</Button>
-            <Button onClick={reallyGenerate} className="bg-black text-white">Apply & Generate</Button>
+            <Button variant="outline" onClick={() => setOpenModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={reallyGenerate} className="bg-[#FF375F] text-white hover:bg-[#e03256]">
+              Apply & Generate
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
