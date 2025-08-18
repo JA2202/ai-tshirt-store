@@ -8,19 +8,20 @@ import { useDesignStore, Color, Material, Side } from "@/lib/store";
 import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Star, Info, X } from "lucide-react";
 
 /* ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "navy"];
 const SIZES = ["S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
 const TYPES = ["unisex"] as const;
-type ProductType = typeof TYPES[number];
+type ProductType = (typeof TYPES)[number];
 /** Visual-only scale for the mockup behind the safe zone (does NOT affect safe zone). */
-const TEE_VISIBLE_SCALE = 1.45; // 1.00 = 100%, bump to taste (e.g., 1.08–1.20)
+const TEE_VISIBLE_SCALE = 1.45;
 /* Desktop offsets (unchanged) */
 const TEE_OFFSET_X_PX = -10;
 const TEE_OFFSET_Y_PX = 90;
-/* NEW: mobile-only offset to prevent the tee from sitting too low on phones */
+/* Mobile-only offset to prevent the tee from sitting too low on phones */
 const TEE_OFFSET_Y_PX_MOBILE = 50;
 
 const BASE_PRICE_MATERIAL: Record<Material, number> = {
@@ -62,20 +63,21 @@ const TEE_MAP: Record<Side, Record<Color, string>> = {
 };
 const TEE_FALLBACK = "/tee.png";
 
+/* ---------- Size guide data ---------- */
 const SIZE_GUIDE_IN = [
-  { label: "S",  length: "28", width: "18",  sleeve: "15 ⅝" },
-  { label: "M",  length: "29", width: "20",  sleeve: "17" },
-  { label: "L",  length: "30", width: "22",  sleeve: "18 ½" },
-  { label: "XL", length: "31", width: "24",  sleeve: "20" },
-  { label: "2XL",length: "32", width: "26",  sleeve: "21 ½" },
+  { label: "S", length: "28", width: "18", sleeve: "15 ⅝" },
+  { label: "M", length: "29", width: "20", sleeve: "17" },
+  { label: "L", length: "30", width: "22", sleeve: "18 ½" },
+  { label: "XL", length: "31", width: "24", sleeve: "20" },
+  { label: "2XL", length: "32", width: "26", sleeve: "21 ½" },
 ];
 
 const SIZE_GUIDE_CM = [
-  { label: "S",  length: "71",   width: "45.7", sleeve: "39.7" },
-  { label: "M",  length: "73.7", width: "50.8", sleeve: "43.2" },
-  { label: "L",  length: "76.2", width: "56",   sleeve: "47" },
-  { label: "XL", length: "78.7", width: "61",   sleeve: "50.8" },
-  { label: "2XL",length: "81.3", width: "66",   sleeve: "54.6" },
+  { label: "S", length: "71", width: "45.7", sleeve: "39.7" },
+  { label: "M", length: "73.7", width: "50.8", sleeve: "43.2" },
+  { label: "L", length: "76.2", width: "56", sleeve: "47" },
+  { label: "XL", length: "78.7", width: "61", sleeve: "50.8" },
+  { label: "2XL", length: "81.3", width: "66", sleeve: "54.6" },
 ];
 
 /**
@@ -89,14 +91,14 @@ const SAFE_ZONE_PRESETS: Record<
   { leftPctOfTee: number; topPctOfTee: number; widthPctOfTee: number }
 > = {
   front: {
-    leftPctOfTee: 0.19,   // tweak
-    topPctOfTee: 0.24,    // tweak
-    widthPctOfTee: 0.62,  // tweak (height is locked to 4/3 of width)
+    leftPctOfTee: 0.19, // tweak
+    topPctOfTee: 0.24, // tweak
+    widthPctOfTee: 0.62, // tweak (height is locked to 4/3 of width)
   },
   back: {
-    leftPctOfTee: 0.19,   // tweak
-    topPctOfTee: 0.26,    // tweak
-    widthPctOfTee: 0.62,  // tweak
+    leftPctOfTee: 0.19, // tweak
+    topPctOfTee: 0.26, // tweak
+    widthPctOfTee: 0.62, // tweak
   },
 };
 
@@ -145,8 +147,16 @@ const TEXT_FONTS = [
 ];
 
 const TEXT_COLORS = [
-  "#111111", "#ffffff", "#ff375f", "#007AFF", "#10b981",
-  "#f59e0b", "#ef4444", "#000000", "#6b7280", "#7c3aed",
+  "#111111",
+  "#ffffff",
+  "#ff375f",
+  "#007AFF",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#000000",
+  "#6b7280",
+  "#7c3aed",
 ];
 
 export default function EditPage() {
@@ -173,7 +183,6 @@ export default function EditPage() {
 
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [sizeGuideTab, setSizeGuideTab] = useState<"in" | "cm">("in");
-
 
   // observe container size to avoid window resize jumps
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
@@ -353,12 +362,7 @@ export default function EditPage() {
     }, 350);
   };
 
-  const applySnapGeneric = (
-    x: number,
-    y: number,
-    halfW: number,
-    halfH: number
-  ) => {
+  const applySnapGeneric = (x: number, y: number, halfW: number, halfH: number) => {
     let sx = x;
     let sy = y;
     let showV: number | null = null;
@@ -416,7 +420,7 @@ export default function EditPage() {
     const minX = safeRect.x + halfW;
     const maxX = safeRect.x + safeRect.w - halfW;
     const minY = safeRect.y + halfH;
-    const maxY = safeRect.y + safeRect.h - halfH;
+    const maxY = safeRect.y + safeRect.h;
     return { x: clamp(x, minX, maxX), y: clamp(y, minY, maxY) };
   };
 
@@ -568,8 +572,7 @@ export default function EditPage() {
     pointers.current.set(e.pointerId, p);
   };
   const onDesignPointerMove = (e: React.PointerEvent) => {
-    if (pointers.current.has(e.pointerId))
-      pointers.current.set(e.pointerId, getLocalXY(e));
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, getLocalXY(e));
     if (modeRef.current === "drag") {
       const p = getLocalXY(e);
       const np = clampPosImage(p.x - gesture.current.startX, p.y - gesture.current.startY, true);
@@ -856,10 +859,7 @@ export default function EditPage() {
     return Math.max(0, base + colorFee + sizeFee);
   }, [material, color, size]);
 
-  const totalPrice = useMemo(
-    () => +(unitPrice * Math.max(1, qty)).toFixed(2),
-    [unitPrice, qty]
-  );
+  const totalPrice = useMemo(() => +(unitPrice * Math.max(1, qty)).toFixed(2), [unitPrice, qty]);
 
   /* ---------- Download mockup JPG (unchanged) ---------- */
   const downloadJPG = async () => {
@@ -934,7 +934,7 @@ export default function EditPage() {
     }
   };
 
-  /* ---------- Print PNG builder (unchanged from last step) ---------- */
+  /* ---------- Print PNG builder (unchanged) ---------- */
   async function buildPrintPNG(): Promise<string> {
     const OUT_W = 3600; // 12" * 300
     const OUT_H = 4800; // 16" * 300
@@ -981,10 +981,7 @@ export default function EditPage() {
       const txtPX = txtNX * OUT_W;
       const txtPY = txtNY * OUT_H;
 
-      const printFontPx = Math.max(
-        12,
-        Math.round((textFontSizePx / (safeRect.h || 1)) * OUT_H)
-      );
+      const printFontPx = Math.max(12, Math.round((textFontSizePx / (safeRect.h || 1)) * OUT_H));
 
       ctx.save();
       ctx.translate(txtPX, txtPY);
@@ -1035,8 +1032,7 @@ export default function EditPage() {
       }
 
       const data = (await res.json()) as SaveResp;
-      const url =
-        data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+      const url = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
 
       if (!url) {
         setSavingPrint(false);
@@ -1074,8 +1070,7 @@ export default function EditPage() {
     }
 
     const data = (await res.json()) as SaveResp;
-    const url =
-        data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+    const url = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
 
     if (!url) {
       setSavingPrint(false);
@@ -1163,8 +1158,8 @@ export default function EditPage() {
             <div
               ref={containerRef}
               onWheel={onWheel}
-              /* CHANGED: taller stage on desktop so enlarged tee fits without clipping */
-              className="relative mx-auto aspect-[3/4] lg:aspect-[2/3] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none"
+              /* Taller stage on desktop so enlarged tee fits without clipping */
+              className="relative mx-auto aspect-[3/4] w-full max-w-xl overflow-hidden rounded-2xl border bg-white touch-none lg:aspect-[2/3]"
             >
               {!allLoaded && (
                 <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
@@ -1187,9 +1182,9 @@ export default function EditPage() {
                 onDragStart={(e) => e.preventDefault()}
                 className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none max-w-none"
                 style={{
-                  width: `${TEE_VISIBLE_SCALE * 100}%`,                  // keep visual scale
-                  left: `calc(50% + ${TEE_OFFSET_X_PX}px)`,              // desktop X (unchanged)
-                  top:  `calc(50% + ${(isMobile ? TEE_OFFSET_Y_PX_MOBILE : TEE_OFFSET_Y_PX)}px)`, // responsive Y
+                  width: `${TEE_VISIBLE_SCALE * 100}%`,
+                  left: `calc(50% + ${TEE_OFFSET_X_PX}px)`,
+                  top: `calc(50% + ${(isMobile ? TEE_OFFSET_Y_PX_MOBILE : TEE_OFFSET_Y_PX)}px)`,
                 }}
               />
 
@@ -1343,27 +1338,94 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Controls (unchanged) */}
+          {/* Controls / Right rail */}
           <div className="min-w-0 rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap">
-              <h2 className="text-lg font-semibold">Adjust & Options</h2>
-              <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-                <Button variant="outline" onClick={undo} disabled={!canUndo}>
-                  Undo
-                </Button>
-                <Button variant="outline" onClick={redo} disabled={!canRedo}>
-                  Redo
-                </Button>
-                <Button variant="outline" onClick={downloadJPG}>
-                  Mockup JPG
-                </Button>
+            {/* Product title + reviews (static) */}
+            <div className="mb-3">
+              <h1 className="text-lg font-semibold">Classic Unisex Tee</h1>
+              <div className="mt-1 flex items-center gap-2 text-xs text-zinc-600">
+                <span className="flex items-center">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.8} fill="currentColor" />
+                  ))}
+                </span>
+                <span>5 Stars | 238 reviews</span>
               </div>
             </div>
 
-            {/* NEW: Text controls (unchanged) */}
+            {/* Adjust & Options + Mockup JPG */}
+            <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap">
+                <h2 className="text-base font-medium">Adjust &amp; Options</h2>
+                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                  <Button variant="outline" onClick={undo} disabled={!canUndo}>
+                    Undo
+                  </Button>
+                  <Button variant="outline" onClick={redo} disabled={!canRedo}>
+                    Redo
+                  </Button>
+                  <Button variant="outline" onClick={downloadJPG}>
+                    Mockup JPG
+                  </Button>
+                </div>
+              </div>
+
+              {/* Fine-tune (image) */}
+              <details className="rounded-xl border bg-white p-3">
+                <summary className="cursor-pointer select-none font-medium">Fine-tune (image)</summary>
+                <div className="mt-4 grid gap-5">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span>Scale</span>
+                      <span className="tabular-nums">{scalePct}%</span>
+                    </div>
+                    <Slider
+                      value={[scalePct]}
+                      min={10}
+                      max={200}
+                      step={1}
+                      onValueChange={(v) => setScalePct(clamp(v[0] ?? scalePct, 10, maxImageScalePct))}
+                      className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span>Rotation</span>
+                      <span className="tabular-nums">{rotationDeg}°</span>
+                    </div>
+                    <Slider
+                      value={[rotationDeg]}
+                      min={-45}
+                      max={45}
+                      step={1}
+                      onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
+                      className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span>Opacity</span>
+                      <span className="tabular-nums">{opacity}%</span>
+                    </div>
+                    <Slider
+                      value={[opacity]}
+                      min={10}
+                      max={100}
+                      step={1}
+                      onValueChange={(v) => setOpacity(v[0] ?? opacity)}
+                      className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            {/* Add Text Section */}
             <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium">Text</span>
+                <h2 className="text-base font-medium">Add Text</h2>
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -1417,7 +1479,7 @@ export default function EditPage() {
                             textColor === c ? "ring-2 ring-[#007AFF]" : ""
                           }`}
                           style={{
-                            background: c,
+                            background: c.toLowerCase(),
                             borderColor: c.toLowerCase() === "#ffffff" ? "#e5e7eb" : "transparent",
                           }}
                           title={c}
@@ -1501,85 +1563,30 @@ export default function EditPage() {
               )}
             </div>
 
-            {/* Fine-tune (image) — unchanged */}
-            <details className="mb-6 rounded-xl border bg-zinc-50 p-4">
-              <summary className="cursor-pointer select-none font-medium">
-                Fine-tune (image)
-              </summary>
-              <div className="mt-4 grid gap-5">
-                <div>
-                  <div className="mb-2 flex items中心 justify-between text-sm">
-                    <span>Scale</span>
-                    <span className="tabular-nums">{scalePct}%</span>
-                  </div>
-                  <Slider
-                    value={[scalePct]}
-                    min={10}
-                    max={200}
-                    step={1}
-                    onValueChange={(v) =>
-                      setScalePct(clamp(v[0] ?? scalePct, 10, maxImageScalePct))
-                    }
-                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                  />
-                </div>
+            {/* Type, Size, Material */}
+            <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <h2 className="mb-3 text-base font-medium">Type, Size, Material</h2>
 
-                <div>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span>Rotation</span>
-                    <span className="tabular-nums">{rotationDeg}°</span>
-                  </div>
-                  <Slider
-                    value={[rotationDeg]}
-                    min={-45}
-                    max={45}
-                    step={1}
-                    onValueChange={(v) => setRotationDeg(v[0] ?? rotationDeg)}
-                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                  />
-                </div>
-
-                <div>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span>Opacity</span>
-                    <span className="tabular-nums">{opacity}%</span>
-                  </div>
-                  <Slider
-                    value={[opacity]}
-                    min={10}
-                    max={100}
-                    step={1}
-                    onValueChange={(v) => setOpacity(v[0] ?? opacity)}
-                    className="[&_.bg-primary]:!bg-[#007AFF] [&_.border-primary]:!border-[#007AFF]"
-                  />
+              {/* Type */}
+              <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="text-sm sm:w-20 sm:shrink-0">Type</span>
+                <div className="flex flex-wrap gap-2">
+                  {TYPES.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setProductType(t)}
+                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                        productType === t ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </details>
 
-            {/* Type */}
-            <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <span className="text-sm sm:w-20 sm:shrink-0">Type</span>
-              <div className="flex flex-wrap gap-2">
-                {TYPES.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setProductType(t)}
-                    className={`rounded-lg px-3 py-2 text-sm transition ${
-                      productType === t
-                        ? "border-2 border-[#007AFF] bg-white"
-                        : "border bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Product options (unchanged) */}
-            <div className="mt-0 grid gap-4">
               {/* Side */}
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Side</span>
                 <div className="flex flex-wrap gap-2">
                   {(["front", "back"] as Side[]).map((s) => (
@@ -1587,9 +1594,7 @@ export default function EditPage() {
                       key={s}
                       onClick={() => setSide(s)}
                       className={`rounded-lg px-3 py-2 text-sm transition ${
-                        s === side
-                          ? "border-2 border-[#007AFF] bg-white"
-                          : "border bg-white hover:bg-zinc-50"
+                        s === side ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
                       }`}
                     >
                       {s}
@@ -1599,7 +1604,7 @@ export default function EditPage() {
               </div>
 
               {/* Color */}
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Color</span>
                 <div className="flex flex-wrap gap-2">
                   {COLORS.map((c) => (
@@ -1625,7 +1630,7 @@ export default function EditPage() {
               </div>
 
               {/* Size */}
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Size</span>
                 <div className="flex flex-wrap items-center gap-2">
                   {SIZES.map((s) => (
@@ -1633,19 +1638,20 @@ export default function EditPage() {
                       key={s}
                       onClick={() => setSize(s)}
                       className={`rounded-lg px-3 py-2 text-sm transition ${
-                        size === s
-                          ? "border-2 border-[#007AFF] bg-white"
-                          : "border bg-white hover:bg-zinc-50"
+                        size === s ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
                       }`}
                     >
                       {s}
                     </button>
                   ))}
 
-                  {/* NEW: Size guide trigger */}
+                  {/* Size guide trigger (inline link) */}
                   <a
                     href="#size-guide"
-                    onClick={(e) => { e.preventDefault(); setSizeGuideOpen(true); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSizeGuideOpen(true);
+                    }}
                     className="ml-2 self-center text-xs underline text-[#007AFF] hover:text-[#005AD6] cursor-pointer"
                     aria-controls="size-guide-dialog"
                     aria-expanded={sizeGuideOpen ? "true" : "false"}
@@ -1664,9 +1670,7 @@ export default function EditPage() {
                       key={m}
                       onClick={() => setMaterial(m)}
                       className={`rounded-lg px-3 py-2 text-sm transition ${
-                        material === m
-                          ? "border-2 border-[#007AFF] bg-white"
-                          : "border bg-white hover:bg-zinc-50"
+                        material === m ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
                       }`}
                     >
                       {m}
@@ -1674,8 +1678,11 @@ export default function EditPage() {
                   ))}
                 </div>
               </div>
+            </div>
 
-              {/* Quantity */}
+            {/* Size & Quantity */}
+            <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <h2 className="mb-3 text-base font-medium">Quantity</h2>
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Quantity</span>
                 <div className="flex items-center gap-2">
@@ -1690,8 +1697,18 @@ export default function EditPage() {
               </div>
             </div>
 
-            {/* Pricing summary */}
-            <div className="mt-6 rounded-xl border bg-zinc-50 p-4">
+            {/* Pricing summary + ETA/shipping info */}
+            <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
+              <h2 className="mb-3 text-base font-medium">Price</h2>
+
+              <div className="mb-3 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs text-zinc-700">
+                <Info className="h-4 w-4 text-zinc-500" aria-hidden />
+                <span className="mr-1">Estimated delivery to United Kingdom:</span>
+                <span className="font-medium">4–6 days</span>
+                <span className="mx-2">•</span>
+                <span>Shipping starts at <span className="font-medium">£3.59</span></span>
+              </div>
+
               <div className="flex items-center justify-between text-sm">
                 <span>Base ({material})</span>
                 <span>{gbp.format(BASE_PRICE_MATERIAL[material])}</span>
@@ -1719,28 +1736,31 @@ export default function EditPage() {
               </div>
             </div>
 
+            {/* Size Guide Modal */}
             {sizeGuideOpen && (
               <div
+                id="size-guide-dialog"
                 className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-4"
                 onClick={() => setSizeGuideOpen(false)}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="size-guide-title"
               >
                 <div
                   className="w-full max-w-2xl rounded-2xl border bg-white p-5 shadow-xl"
                   onClick={(e) => e.stopPropagation()}
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="size-guide-title"
                 >
                   <div className="mb-4 flex items-start justify-between">
                     <h3 id="size-guide-title" className="text-lg font-semibold">
                       Find Your Size
                     </h3>
                     <button
-                      className="rounded-md border px-2 py-1 text-sm hover:bg-zinc-50"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-sm hover:bg-zinc-50"
                       onClick={() => setSizeGuideOpen(false)}
                       aria-label="Close size guide"
                     >
-                      ✕
+                      <X className="h-4 w-4" />
+                      Close
                     </button>
                   </div>
 
@@ -1751,53 +1771,54 @@ export default function EditPage() {
                         sizeGuideTab === "in"
                           ? "border-[#007AFF] bg-[#007AFF] text-white"
                           : "bg-white hover:bg-zinc-50"
-                    }`}
-                    onClick={() => setSizeGuideTab("in")}
-                  >
-                    Inches
-                  </button>
-                  <button
-                    className={`rounded-lg border px-3 py-1.5 text-sm ${
-                      sizeGuideTab === "cm"
-                        ? "border-[#007AFF] bg-[#007AFF] text-white"
-                        : "bg-white hover:bg-zinc-50"
-                  }`}
-                  onClick={() => setSizeGuideTab("cm")}
-                >
-                  Centimetres
-                </button>
-              </div>
+                      }`}
+                      onClick={() => setSizeGuideTab("in")}
+                      type="button"
+                    >
+                      Inches
+                    </button>
+                    <button
+                      className={`rounded-lg border px-3 py-1.5 text-sm ${
+                        sizeGuideTab === "cm"
+                          ? "border-[#007AFF] bg-[#007AFF] text-white"
+                          : "bg-white hover:bg-zinc-50"
+                      }`}
+                      onClick={() => setSizeGuideTab("cm")}
+                      type="button"
+                    >
+                      Centimetres
+                    </button>
+                  </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="py-2 text-left font-medium">Size Label</th>
-                      <th className="py-2 text-left font-medium">Length</th>
-                      <th className="py-2 text-left font-medium">Width</th>
-                      <th className="py-2 text-left font-medium">Sleeve length</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(sizeGuideTab === "in" ? SIZE_GUIDE_IN : SIZE_GUIDE_CM).map((r) => (
-                      <tr key={`${sizeGuideTab}-${r.label}`} className="border-b last:border-0">
-                        <td className="py-2">{r.label}</td>
-                        <td className="py-2">{r.length}</td>
-                        <td className="py-2">{r.width}</td>
-                        <td className="py-2">{r.sleeve}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="py-2 text-left font-medium">Size Label</th>
+                          <th className="py-2 text-left font-medium">Length</th>
+                          <th className="py-2 text-left font-medium">Width</th>
+                          <th className="py-2 text-left font-medium">Sleeve length</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(sizeGuideTab === "in" ? SIZE_GUIDE_IN : SIZE_GUIDE_CM).map((r) => (
+                          <tr key={`${sizeGuideTab}-${r.label}`} className="border-b last:border-0">
+                            <td className="py-2">{r.label}</td>
+                            <td className="py-2">{r.length}</td>
+                            <td className="py-2">{r.width}</td>
+                            <td className="py-2">{r.sleeve}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-
+            )}
 
             {/* Advanced (accordion) */}
-            <details className="mt-6 rounded-xl border bg-zinc-50 p-4">
+            <details className="rounded-xl border bg-zinc-50 p-4">
               <summary className="cursor-pointer select-none font-medium">
                 Advanced
                 <span className="ml-2 align-middle text-xs">
@@ -1857,9 +1878,7 @@ export default function EditPage() {
         {/* Mobile sticky checkout */}
         <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-white/60 lg:hidden">
           <div className="mx-auto flex w-full max-w-screen-sm items-center justify-between gap-3">
-            <span className="text-sm">
-              Total {gbp.format(totalPrice)}
-            </span>
+            <span className="text-sm">Total {gbp.format(totalPrice)}</span>
             <Button
               className="rounded-xl bg-[#FF375F] px-6 text-white hover:bg-[#e23355]"
               onClick={handleCheckout}
