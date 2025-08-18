@@ -47,105 +47,105 @@ const SURPRISE = [
   "astronaut holding a coffee",
   "neon dragon silhouette",
   "dancing avocado with sunglasses",
-"retro cassette tape with neon lightning",
-"sleepy sloth sipping espresso",
-"pixelated UFO abducting a slice of pizza",
-"minimal wave with rising sun",
-"geometric fox portrait",
-"cyberpunk city skyline silhouette",
-"tiny astronaut walking a balloon planet",
-"vaporwave dolphin over grid sunset",
-"handwritten 'ok but coffee first' sticker",
-"samurai cat in kimono",
-"origami crane constellation",
-"vintage roller skates with sparkles",
-"mushroom house in a teacup",
-"skeleton hand peace sign, friendly style",
-"happy cloud raining confetti",
-"kawaii ramen bowl with chopsticks",
-"meteor surfing penguin",
-"neon palm tree glitch",
-"mountain landscape inside triangle",
-"sunflower smile on checkerboard",
-"retro game controller blueprint",
-"froggy DJ on vinyl turntable",
-"thunderbolt with smiley face",
-"galactic koi fish yin yang",
-"tiny camper van under big moon",
-"robot watering a plant",
-"lava lamp dream swirl",
-"polaroid of a beach dog",
-"compass rose with waves",
-"paper airplane shooting stars",
-"bananas riding a skateboard",
-"minimal yin yang cats",
-"astronaut reading a book",
-"404 not found road sign",
-"glitch butterfly with pixels",
-"lofi cat at window",
-"boba tea galaxy",
-"donut planet with sprinkles ring",
-"synthwave grid mountain",
-"wolf silhouette with forest double exposure",
-"origami fox minimal line",
-"cute cactus trio in pots",
-"happy toast high five",
-"soda can surfing wave",
-"octopus holding balloons",
-"vintage microphone lightning",
-"astronaut riding rubber duck",
-"minimal chess knight mark",
-"steaming dumpling with smile",
-"paper cut-out ocean layers",
-"retro badge stay curious",
-"globe with paper planes",
-"dog astronaut paw print",
-"cat loaf bakery logo",
-"spicy chili with fire smile",
-"rainbow gradient swirl heart",
-"campfire with marshmallow swords",
-"geometric hummingbird",
-"mountain biker silhouette sunset",
-"polite ghost saying boo please",
-"potted monstera line art",
-"origami whale with waves",
-"neon lightning bolt pattern",
-"retro motel sign road trip",
-"corgi butt icon",
-"sushi rocket ship",
-"snail mail envelope racing",
-"tiny wizard casting wifi",
-"vintage cassette 'mixtape vol.1'",
-"handpoke style snake and flowers",
-"archery target with smile",
-"sakura branch circle frame",
-"camp badge adventure awaits",
-"paper moon and ladder",
-"chef cat tossing pizza",
-"rainbow gradient jellyfish",
-"owl reading at midnight",
-"bicycle with flower basket",
-"tea dragon in cup",
-"glitch smiley face",
-"retro map with pin",
-"wind-up robot heart",
-"pirate rubber duck",
-"comfy croissant with beret",
-"cassette tangled into heart",
-"koala hanging from wifi signal",
-"sunrise over desert dunes",
-"jelly donut lifting weights",
-"chill bear with beanie",
-"camping under aurora",
-"keyboard key 'ESC' running",
-"minimal lightning inside circle",
-"lotus flower geometric lines",
-"happy skeleton skating",
-"bonsai tree on wave",
-"tiny dragon curled around pencil",
-"gameboy style cat screen",
-"astronaut planting smiley flag",
-"bubble tea comet tail",
+  "retro cassette tape with neon lightning",
+  "sleepy sloth sipping espresso",
+  "pixelated UFO abducting a slice of pizza",
+  "minimal wave with rising sun",
+  "geometric fox portrait",
+  "cyberpunk city skyline silhouette",
+  "tiny astronaut walking a balloon planet",
+  "vaporwave dolphin over grid sunset",
+  "handwritten 'ok but coffee first' sticker",
+  "samurai cat in kimono",
+  "origami crane constellation",
+  "vintage roller skates with sparkles",
+  "mushroom house in a teacup",
+  "skeleton hand peace sign, friendly style",
+  "happy cloud raining confetti",
+  "kawaii ramen bowl with chopsticks",
+  "meteor surfing penguin",
+  "neon palm tree glitch",
+  "mountain landscape inside triangle",
+  "sunflower smile on checkerboard",
+  "retro game controller blueprint",
+  "froggy DJ on vinyl turntable",
+  "thunderbolt with smiley face",
+  "galactic koi fish yin yang",
+  "tiny camper van under big moon",
+  "robot watering a plant",
+  "lava lamp dream swirl",
+  "polaroid of a beach dog",
+  "compass rose with waves",
+  "paper airplane shooting stars",
+  "bananas riding a skateboard",
+  "minimal yin yang cats",
+  "astronaut reading a book",
+  "404 not found road sign",
+  "glitch butterfly with pixels",
+  "lofi cat at window",
+  "boba tea galaxy",
+  "donut planet with sprinkles ring",
+  "synthwave grid mountain",
+  "wolf silhouette with forest double exposure",
+  "origami fox minimal line",
+  "cute cactus trio in pots",
+  "happy toast high five",
+  "soda can surfing wave",
+  "octopus holding balloons",
+  "vintage microphone lightning",
+  "astronaut riding rubber duck",
+  "minimal chess knight mark",
+  "steaming dumpling with smile",
+  "paper cut-out ocean layers",
+  "retro badge stay curious",
+  "globe with paper planes",
+  "dog astronaut paw print",
+  "cat loaf bakery logo",
+  "spicy chili with fire smile",
+  "rainbow gradient swirl heart",
+  "campfire with marshmallow swords",
+  "geometric hummingbird",
+  "mountain biker silhouette sunset",
+  "polite ghost saying boo please",
+  "potted monstera line art",
+  "origami whale with waves",
+  "neon lightning bolt pattern",
+  "retro motel sign road trip",
+  "corgi butt icon",
+  "sushi rocket ship",
+  "snail mail envelope racing",
+  "tiny wizard casting wifi",
+  "vintage cassette 'mixtape vol.1'",
+  "handpoke style snake and flowers",
+  "archery target with smile",
+  "sakura branch circle frame",
+  "camp badge adventure awaits",
+  "paper moon and ladder",
+  "chef cat tossing pizza",
+  "rainbow gradient jellyfish",
+  "owl reading at midnight",
+  "bicycle with flower basket",
+  "tea dragon in cup",
+  "glitch smiley face",
+  "retro map with pin",
+  "wind-up robot heart",
+  "pirate rubber duck",
+  "comfy croissant with beret",
+  "cassette tangled into heart",
+  "koala hanging from wifi signal",
+  "sunrise over desert dunes",
+  "jelly donut lifting weights",
+  "chill bear with beanie",
+  "camping under aurora",
+  "keyboard key 'ESC' running",
+  "minimal lightning inside circle",
+  "lotus flower geometric lines",
+  "happy skeleton skating",
+  "bonsai tree on wave",
+  "tiny dragon curled around pencil",
+  "gameboy style cat screen",
+  "astronaut planting smiley flag",
+  "bubble tea comet tail",
 ];
 
 /* Showcase images present in /public/showcase */
@@ -179,6 +179,7 @@ export default function GeneratePage() {
   const [styleKey, setStyleKey] = useState<StyleKey>("realistic");
   const [customStyle, setCustomStyle] = useState("");
   const [transparent, setTransparent] = useState(false);
+  const [relaxedFilter, setRelaxedFilter] = useState(false); // NEW: relaxed filtering toggle
   const [refPreview, setRefPreview] = useState<string | null>(null);
 
   // Refine (folded by default)
@@ -213,6 +214,7 @@ export default function GeneratePage() {
     if (finalStyle) parts.push(finalStyle);
     if (transparent) parts.push("transparent background, sticker-style, no backdrop, no shadows");
     if (refPreview) parts.push("inspired by an uploaded reference image");
+    if (relaxedFilter) parts.push("PG-13, non-explicit, no nudity, non-sexualized, family-friendly"); // NEW
     parts.push("high contrast, sharp, t-shirt print ready");
     return parts.filter(Boolean).join(", ");
   }
@@ -579,7 +581,7 @@ export default function GeneratePage() {
                 alt={`showcase ${i + 1}`}
                 loading="lazy"
                 className="h-48 w-48 rounded-xl object-cover sm:h-56 sm:w-56"
-                onError={(e) => (e.currentTarget.style.display = "none")} // hide any missing file gracefully
+                onError={(e) => (e.currentTarget.style.display = "none")}
               />
             </div>
           ))}
@@ -614,7 +616,8 @@ export default function GeneratePage() {
 
       {/* MODAL: Style / Transparent / Reference */}
       <Dialog open={openModal} onOpenChange={setOpenModal}>
-        <DialogContent className="w-[96vw] sm:max-w-lg">
+        {/* FIX: constrain height + allow scrolling to avoid mobile overflow */}
+        <DialogContent className="w-[96vw] sm:max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain">
           <DialogHeader>
             <DialogTitle>Style & options</DialogTitle>
           </DialogHeader>
@@ -645,16 +648,34 @@ export default function GeneratePage() {
             )}
           </div>
 
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              id="transparent-bg"
-              type="checkbox"
-              checked={transparent}
-              onChange={(e) => setTransparent(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <label htmlFor="transparent-bg" className="text-sm">
-              Transparent background
+          {/* Toggles row: Transparent + Relaxed filtering */}
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+            <label htmlFor="transparent-bg" className="flex items-center gap-2">
+              <input
+                id="transparent-bg"
+                type="checkbox"
+                checked={transparent}
+                onChange={(e) => setTransparent(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <span className="text-sm">Transparent background</span>
+            </label>
+
+            {/* NEW: Relaxed filtering */}
+            <label htmlFor="relaxed-filter" className="flex items-start gap-2">
+              <input
+                id="relaxed-filter"
+                type="checkbox"
+                checked={relaxedFilter}
+                onChange={(e) => setRelaxedFilter(e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="text-sm">
+                Relaxed filtering{" "}
+                <span className="text-xs text-zinc-500">
+                  (May allow edgier themes; no explicit content)
+                </span>
+              </span>
             </label>
           </div>
 
@@ -676,7 +697,8 @@ export default function GeneratePage() {
             )}
           </div>
 
-          <DialogFooter className="mt-4">
+          {/* FIX: footer stacks on small screens to avoid overflow */}
+          <DialogFooter className="mt-4 flex flex-col-reverse gap-2 sm:flex-row">
             <Button variant="outline" onClick={() => setOpenModal(false)}>
               Cancel
             </Button>
