@@ -17,26 +17,29 @@ import {
 
 type StyleKey =
   | "realistic" | "cartoon" | "anime" | "fine_line"
-  | "minimal" | "vintage" | "graphic_logo" | "other";
+  | "minimal" | "vintage" | "graphic_logo" | "other"
+  // NEW keys for your preset list (keeping previous keys for compatibility)
+  | "chibi" | "pixar_like" | "disney_like" | "comic"
+  | "cyberpunk" | "synthwave" | "pixel_art" | "graffiti"
+  | "oil_painting" | "logo";
 
 const STYLES: { key: StyleKey; label: string; token: string }[] = [
-  { key: "realistic", label: "Realistic", token: "photorealistic, natural lighting, high detail" },
-  { key: "cartoon", label: "Cartoon", token: "bold outlines, flat colours, playful" },
-  { key: "anime", label: "Anime", token: "anime style, cel shading, crisp linework" },
-  { key: "fine_line", label: "Fine line", token: "minimal fine line art, single-colour, delicate lines" },
-  { key: "minimal", label: "Minimal", token: "minimalist, clean negative space, simple forms" },
-  { key: "vintage", label: "Vintage", token: "vintage, worn texture, retro print" },
-  { key: "graphic_logo", label: "Graphic logo", token: "vector style, logo-ready, solid fills" },
-  { key: "other", label: "Other", token: "" },
-];
-
-const PRESETS = [
-  "minimal line-art animal logo",
-  "retro wave sunset with palm trees",
-  "bold mascot thunderbolt",
-  "vintage skate badge",
-  "geometric mountain emblem",
-  "anime chibi character",
+  { key: "anime",       label: "Anime / Manga", token: "anime manga style, cel shading, crisp linework" },
+  { key: "chibi",       label: "Chibi / Kawaii", token: "chibi kawaii, big head small body, cute, rounded shapes" },
+  { key: "pixar_like",  label: "Pixar-like", token: "3D pixar-like, soft global illumination, friendly proportions" },
+  { key: "disney_like", label: "Disney-like", token: "storybook disney-like, clean outlines, cheerful bright colours" },
+  { key: "comic",       label: "Comic Book", token: "comic book ink, bold outlines, halftone shading" },
+  { key: "cartoon",     label: "Cartoon", token: "bold outlines, flat colours, playful" },
+  { key: "cyberpunk",   label: "Cyberpunk", token: "neon cyberpunk, high-contrast, futuristic vibes" },
+  { key: "synthwave",   label: "Synthwave", token: "synthwave neon grid, retro 80s palette" },
+  { key: "pixel_art",   label: "Pixel Art", token: "8-bit pixel art, crisp pixels, low-res aesthetic" },
+  { key: "realistic",   label: "Realistic", token: "photorealistic, natural lighting, high detail" },
+  { key: "graffiti",    label: "Graffiti", token: "graffiti street art, spray paint, stencil, paint drips" },
+  { key: "oil_painting",label: "Oil Painting", token: "oil painting, visible brush strokes, impasto texture" },
+  { key: "fine_line",   label: "Fine line", token: "minimal fine line art, single-colour, delicate lines" },
+  { key: "logo",        label: "Logo", token: "vector style, logo-ready, solid fills, high contrast" },
+  // Keep "Other" so users can still enter a custom style if they want
+  { key: "other",       label: "Other", token: "" },
 ];
 
 const SURPRISE = [
@@ -167,6 +170,37 @@ function Dots() {
   );
 }
 
+// Helper: derive friendly error message
+function friendlyError(status: number | null, raw: unknown): string {
+  const text = typeof raw === "string"
+    ? raw
+    : typeof raw === "object" && raw && "message" in (raw as any)
+      ? String((raw as any).message)
+      : "";
+
+  // Content/safety
+  if (/content|safety|policy|unsafe|inappropriate/i.test(text)) {
+    return "Inappropriate or unsafe prompt. Try rewording in a family-friendly way.";
+  }
+  // Rate limit
+  if (status === 429 || /rate limit/i.test(text)) {
+    return "Too many requests right now. Please try again in a moment.";
+  }
+  // Billing/Quota
+  if (status === 402 || status === 403 || /quota|billing|credit/i.test(text)) {
+    return "Out of credits or quota. Try again later or check your plan.";
+  }
+  // Network/server
+  if (status && status >= 500) {
+    return "Temporary server issue. Please retry.";
+  }
+  if (!status && !text) {
+    return "Network issue. Check your connection and try again.";
+  }
+  // Fallback to API message if present
+  return text || "Image generation failed. Please try again.";
+}
+
 export default function GeneratePage() {
   const router = useRouter();
   const { prompt, setPrompt, images, setImages, chosenImage, setChosenImage } = useDesignStore();
@@ -179,8 +213,30 @@ export default function GeneratePage() {
   const [styleKey, setStyleKey] = useState<StyleKey>("realistic");
   const [customStyle, setCustomStyle] = useState("");
   const [transparent, setTransparent] = useState(false);
-  const [relaxedFilter, setRelaxedFilter] = useState(false); // NEW: relaxed filtering toggle
+  const [relaxedFilter, setRelaxedFilter] = useState(false); // relaxed filtering toggle
   const [refPreview, setRefPreview] = useState<string | null>(null);
+
+  // Styles accordion open/close (collapsed on mobile, open on desktop)
+  const [stylesOpen, setStylesOpen] = useState(true);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      setStylesOpen(false);
+    }
+  }, []);
+
+  // Top banner (dismissible)
+  const [showBanner, setShowBanner] = useState(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = localStorage.getItem("tl_banner_dismissed");
+    if (v === "1") setShowBanner(false);
+  }, []);
+  const dismissBanner = () => {
+    setShowBanner(false);
+    try {
+      localStorage.setItem("tl_banner_dismissed", "1");
+    } catch {}
+  };
 
   // Refine (folded by default)
   const [showRefine, setShowRefine] = useState(false);
@@ -214,7 +270,7 @@ export default function GeneratePage() {
     if (finalStyle) parts.push(finalStyle);
     if (transparent) parts.push("transparent background, sticker-style, no backdrop, no shadows");
     if (refPreview) parts.push("inspired by an uploaded reference image");
-    if (relaxedFilter) parts.push("PG-13, non-explicit, no nudity, non-sexualized, family-friendly"); // NEW
+    if (relaxedFilter) parts.push("PG-13, non-explicit, no nudity, non-sexualized, family-friendly");
     parts.push("high contrast, sharp, t-shirt print ready");
     return parts.filter(Boolean).join(", ");
   }
@@ -238,12 +294,15 @@ export default function GeneratePage() {
         body: JSON.stringify({ prompt: finalPrompt, count, size: "1024x1024", quality: "low" }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to generate");
+      if (!res.ok) {
+        const msg = friendlyError(res.status ?? null, data?.error || data);
+        throw new Error(msg);
+      }
       setImages(data.images || []);
       setRefine(finalPrompt);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Image generation failed. Check logs or credits.");
+      alert(friendlyError(null, e));
     } finally {
       setLoading(false);
     }
@@ -298,7 +357,6 @@ export default function GeneratePage() {
               alt="Threadlab"
               className="h-7 w-auto"
               onError={(e) => {
-                // fallback to text if the logo file isn't there yet
                 const img = e.currentTarget;
                 const span = document.createElement("span");
                 span.textContent = "Threadlab";
@@ -318,12 +376,42 @@ export default function GeneratePage() {
         </div>
       </header>
 
+      {/* Top banner — disclaimers */}
+      {showBanner && (
+        <div className="mx-auto mb-2 w-full max-w-6xl px-4">
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFF] p-3 text-xs text-zinc-700">
+            <div>
+              <div className="font-medium">Best on Wi-Fi.</div>
+              <div className="mt-0.5">
+                We use OpenAI image generation. Harmful or explicit content won’t be generated or printed{" "}
+                <a
+                  href="https://openai.com/policies/usage-policies"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#007AFF] underline"
+                >
+                  Guidelines
+                </a>
+              </div>
+            </div>
+            <button
+              aria-label="Dismiss"
+              onClick={dismissBanner}
+              className="shrink-0 rounded-md px-2 py-1 text-zinc-500 hover:bg-white"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Hero */}
-      <section className="mx-auto w-full max-w-4xl px-4 pt-6 pb-2 text-center">
+      <section className="mx-auto w-full max-w-4xl px-4 pt-4 pb-2 text-center">
         <h1 className="text-4xl font-bold sm:text-5xl">Generate Your Original Design</h1>
         <p className="mx-auto mt-3 max-w-2xl text-lg">
           Create unique clothing and apparel by chatting with AI.
         </p>
+
         {/* Micro trust bar */}
         <div className="mt-4 text-sm">
           <span>500,000 AI Designs Created</span>
@@ -443,21 +531,6 @@ export default function GeneratePage() {
                   </div>
                 </div>
               </div>
-
-              {/* Preset chips — horizontal scroll on small screens */}
-              <div className="-mx-1 mt-1 overflow-x-auto">
-                <div className="flex min-w-full items-center gap-2 px-1">
-                  {PRESETS.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPrompt(prompt ? `${prompt}, ${p}` : p)}
-                      className="whitespace-nowrap rounded-full border px-3 py-1.5 text-sm transition hover:bg-zinc-50"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         </section>
@@ -541,11 +614,14 @@ export default function GeneratePage() {
                             }),
                           });
                           const data = await res.json();
-                          if (!res.ok) throw new Error(data?.error || "Failed to generate");
+                          if (!res.ok) {
+                            const msg = friendlyError(res.status ?? null, data?.error || data);
+                            throw new Error(msg);
+                          }
                           setImages(data.images || []);
-                        } catch (e) {
+                        } catch (e: any) {
                           console.error(e);
-                          alert("Image generation failed.");
+                          alert(friendlyError(null, e));
                         } finally {
                           setLoading(false);
                         }
@@ -616,41 +692,71 @@ export default function GeneratePage() {
 
       {/* MODAL: Style / Transparent / Reference */}
       <Dialog open={openModal} onOpenChange={setOpenModal}>
-        {/* FIX: constrain height + allow scrolling to avoid mobile overflow */}
-        <DialogContent className="w-[96vw] sm:max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain">
+        {/* constrain height + allow scrolling; add generous side margin on mobile */}
+        <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[calc(100vw-2rem)] sm:max-w-lg max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain break-words">
           <DialogHeader>
             <DialogTitle>Style & options</DialogTitle>
           </DialogHeader>
 
+          {/* Accordion for styles */}
           <div className="mt-2">
-            <div className="mb-2 text-sm">What type of style?</div>
-            <div className="flex flex-wrap gap-2">
-              {STYLES.map((s) => (
-                <button
-                  key={s.key}
-                  onClick={() => setStyleKey(s.key)}
-                  className={`rounded-full px-3 py-1.5 text-sm transition ${
-                    styleKey === s.key ? "bg-black text-white" : "border bg-white hover:bg-zinc-50"
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
+            <details
+              open={stylesOpen}
+              onToggle={(e) => setStylesOpen((e.currentTarget as HTMLDetailsElement).open)}
+              className="rounded-lg border bg-white"
+            >
+              <summary
+                className="flex min-w-0 items-center gap-2 cursor-pointer select-none rounded-lg px-3 py-2 pr-8 text-sm font-medium
+                           whitespace-normal break-words list-none [&::-webkit-details-marker]:hidden"
+              >
+                <span className="min-w-0">
+                  Styles{" "}
+                  {styleKey ? (
+                    <span className="text-zinc-500">— {STYLES.find((s) => s.key === styleKey)?.label}</span>
+                  ) : null}
+                </span>
+              </summary>
 
-            {styleKey === "other" && (
-              <Input
-                value={customStyle}
-                onChange={(e) => setCustomStyle(e.target.value)}
-                placeholder="Describe the style (e.g. watercolor, stencil, cyberpunk neon)"
-                className="mt-3"
-              />
-            )}
+              <div className="border-t p-3 min-w-0">
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  {STYLES.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={() => setStyleKey(s.key)}
+                      className={`flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-sm whitespace-normal break-words transition ${
+                        styleKey === s.key ? "ring-2 ring-black" : "border bg-white hover:bg-zinc-50"
+                      }`}
+                      title={s.label}
+                    >
+                      {/* Style thumbnail (temp JPGs in /public/styles/<key>.jpg) */}
+                      <img
+                        src={`/styles/${s.key}.jpg`}
+                        alt=""
+                        className="h-6 w-6 flex-shrink-0 rounded-full object-cover ring-1 ring-zinc-200"
+                        onError={(e) => (e.currentTarget.style.display = "none")}
+                        loading="lazy"
+                      />
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom style field shown when "Other" is selected */}
+                {styleKey === "other" && (
+                  <Input
+                    value={customStyle}
+                    onChange={(e) => setCustomStyle(e.target.value)}
+                    placeholder="Describe the style (e.g. watercolor, stencil, cyberpunk neon)"
+                    className="mt-3"
+                  />
+                )}
+              </div>
+            </details>
           </div>
 
           {/* Toggles row: Transparent + Relaxed filtering */}
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-            <label htmlFor="transparent-bg" className="flex items-center gap-2">
+          <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
+            <label htmlFor="transparent-bg" className="flex min-w-0 items-center gap-2">
               <input
                 id="transparent-bg"
                 type="checkbox"
@@ -658,11 +764,10 @@ export default function GeneratePage() {
                 onChange={(e) => setTransparent(e.target.checked)}
                 className="h-4 w-4"
               />
-              <span className="text-sm">Transparent background</span>
+              <span className="text-sm whitespace-normal break-words">Transparent background</span>
             </label>
 
-            {/* NEW: Relaxed filtering */}
-            <label htmlFor="relaxed-filter" className="flex items-start gap-2">
+            <label htmlFor="relaxed-filter" className="flex min-w-0 items-start gap-2">
               <input
                 id="relaxed-filter"
                 type="checkbox"
@@ -670,9 +775,9 @@ export default function GeneratePage() {
                 onChange={(e) => setRelaxedFilter(e.target.checked)}
                 className="mt-0.5 h-4 w-4"
               />
-              <span className="text-sm">
+              <span className="text-sm whitespace-normal break-words">
                 Relaxed filtering{" "}
-                <span className="text-xs text-zinc-500">
+                <span className="block text-xs text-zinc-500">
                   (May allow edgier themes; no explicit content)
                 </span>
               </span>
@@ -681,11 +786,15 @@ export default function GeneratePage() {
 
           <div className="mt-4">
             <div className="mb-2 text-sm">Upload reference (optional)</div>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => onRefFile(e.target.files?.[0] ?? null)}
-            />
+            {/* wrapper to prevent long filenames from forcing width */}
+            <div className="overflow-hidden">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(e) => onRefFile(e.target.files?.[0] ?? null)}
+                className="block w-full max-w-full"
+              />
+            </div>
             {refPreview && (
               <div className="mt-2">
                 <img
@@ -697,12 +806,19 @@ export default function GeneratePage() {
             )}
           </div>
 
-          {/* FIX: footer stacks on small screens to avoid overflow */}
-          <DialogFooter className="mt-4 flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => setOpenModal(false)}>
+          {/* footer stacks on small screens to avoid overflow */}
+          <DialogFooter className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setOpenModal(false)}
+              className="w-full whitespace-normal break-words sm:w-auto"
+            >
               Cancel
             </Button>
-            <Button onClick={reallyGenerate} className="bg-[#FF375F] text-white hover:bg-[#e03256]">
+            <Button
+              onClick={reallyGenerate}
+              className="w-full whitespace-normal break-words bg-[#FF375F] text-white hover:bg-[#e03256] sm:w-auto"
+            >
               Apply & Generate
             </Button>
           </DialogFooter>

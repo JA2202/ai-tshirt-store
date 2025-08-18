@@ -13,6 +13,8 @@ import { Slider } from "@/components/ui/slider";
 const COLORS: Color[] = ["white", "black", "navy"];
 const SIZES = ["S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
+const TYPES = ["unisex"] as const;
+type ProductType = typeof TYPES[number];
 /** Visual-only scale for the mockup behind the safe zone (does NOT affect safe zone). */
 const TEE_VISIBLE_SCALE = 1.45; // 1.00 = 100%, bump to taste (e.g., 1.08–1.20)
 /* Desktop offsets (unchanged) */
@@ -59,6 +61,22 @@ const TEE_MAP: Record<Side, Record<Color, string>> = {
   },
 };
 const TEE_FALLBACK = "/tee.png";
+
+const SIZE_GUIDE_IN = [
+  { label: "S",  length: "28", width: "18",  sleeve: "15 ⅝" },
+  { label: "M",  length: "29", width: "20",  sleeve: "17" },
+  { label: "L",  length: "30", width: "22",  sleeve: "18 ½" },
+  { label: "XL", length: "31", width: "24",  sleeve: "20" },
+  { label: "2XL",length: "32", width: "26",  sleeve: "21 ½" },
+];
+
+const SIZE_GUIDE_CM = [
+  { label: "S",  length: "71",   width: "45.7", sleeve: "39.7" },
+  { label: "M",  length: "73.7", width: "50.8", sleeve: "43.2" },
+  { label: "L",  length: "76.2", width: "56",   sleeve: "47" },
+  { label: "XL", length: "78.7", width: "61",   sleeve: "50.8" },
+  { label: "2XL",length: "81.3", width: "66",   sleeve: "54.6" },
+];
 
 /**
  * SAFE ZONE CALIBRATION (Printful alignment)
@@ -153,6 +171,10 @@ export default function EditPage() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const teeImgRef = useRef<HTMLImageElement | null>(null);
 
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
+  const [sizeGuideTab, setSizeGuideTab] = useState<"in" | "cm">("in");
+
+
   // observe container size to avoid window resize jumps
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -195,6 +217,7 @@ export default function EditPage() {
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   const [qty, setQty] = useState<number>(1);
+  const [productType, setProductType] = useState<ProductType>("unisex");
 
   /* ---------- NEW: Text layer state ---------- */
   const [textEnabled, setTextEnabled] = useState(false);
@@ -1533,6 +1556,26 @@ export default function EditPage() {
               </div>
             </details>
 
+            {/* Type */}
+            <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <span className="text-sm sm:w-20 sm:shrink-0">Type</span>
+              <div className="flex flex-wrap gap-2">
+                {TYPES.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setProductType(t)}
+                    className={`rounded-lg px-3 py-2 text-sm transition ${
+                      productType === t
+                        ? "border-2 border-[#007AFF] bg-white"
+                        : "border bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Product options (unchanged) */}
             <div className="mt-0 grid gap-4">
               {/* Side */}
@@ -1584,7 +1627,7 @@ export default function EditPage() {
               {/* Size */}
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-sm sm:w-20 sm:shrink-0">Size</span>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {SIZES.map((s) => (
                     <button
                       key={s}
@@ -1598,6 +1641,17 @@ export default function EditPage() {
                       {s}
                     </button>
                   ))}
+
+                  {/* NEW: Size guide trigger */}
+                  <a
+                    href="#size-guide"
+                    onClick={(e) => { e.preventDefault(); setSizeGuideOpen(true); }}
+                    className="ml-2 self-center text-xs underline text-[#007AFF] hover:text-[#005AD6] cursor-pointer"
+                    aria-controls="size-guide-dialog"
+                    aria-expanded={sizeGuideOpen ? "true" : "false"}
+                  >
+                    Size guide
+                  </a>
                 </div>
               </div>
 
@@ -1664,6 +1718,83 @@ export default function EditPage() {
                 <span>{gbp.format(totalPrice)}</span>
               </div>
             </div>
+
+            {sizeGuideOpen && (
+              <div
+                className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-4"
+                onClick={() => setSizeGuideOpen(false)}
+              >
+                <div
+                  className="w-full max-w-2xl rounded-2xl border bg-white p-5 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="size-guide-title"
+                >
+                  <div className="mb-4 flex items-start justify-between">
+                    <h3 id="size-guide-title" className="text-lg font-semibold">
+                      Find Your Size
+                    </h3>
+                    <button
+                      className="rounded-md border px-2 py-1 text-sm hover:bg-zinc-50"
+                      onClick={() => setSizeGuideOpen(false)}
+                      aria-label="Close size guide"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Tabs */}
+                  <div className="mb-4 flex gap-2">
+                    <button
+                      className={`rounded-lg border px-3 py-1.5 text-sm ${
+                        sizeGuideTab === "in"
+                          ? "border-[#007AFF] bg-[#007AFF] text-white"
+                          : "bg-white hover:bg-zinc-50"
+                    }`}
+                    onClick={() => setSizeGuideTab("in")}
+                  >
+                    Inches
+                  </button>
+                  <button
+                    className={`rounded-lg border px-3 py-1.5 text-sm ${
+                      sizeGuideTab === "cm"
+                        ? "border-[#007AFF] bg-[#007AFF] text-white"
+                        : "bg-white hover:bg-zinc-50"
+                  }`}
+                  onClick={() => setSizeGuideTab("cm")}
+                >
+                  Centimetres
+                </button>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 text-left font-medium">Size Label</th>
+                      <th className="py-2 text-left font-medium">Length</th>
+                      <th className="py-2 text-left font-medium">Width</th>
+                      <th className="py-2 text-left font-medium">Sleeve length</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sizeGuideTab === "in" ? SIZE_GUIDE_IN : SIZE_GUIDE_CM).map((r) => (
+                      <tr key={`${sizeGuideTab}-${r.label}`} className="border-b last:border-0">
+                        <td className="py-2">{r.label}</td>
+                        <td className="py-2">{r.length}</td>
+                        <td className="py-2">{r.width}</td>
+                        <td className="py-2">{r.sleeve}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
 
             {/* Advanced (accordion) */}
             <details className="mt-6 rounded-xl border bg-zinc-50 p-4">
