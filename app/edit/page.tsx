@@ -26,21 +26,21 @@ const TEE_OFFSET_Y_PX = 90;
 const TEE_OFFSET_Y_PX_MOBILE = 50;
 
 const BASE_PRICE_MATERIAL: Record<Material, number> = {
-  standard: 12,
-  eco: 14,
-  premium: 18,
+  standard: 21.99,
+  eco: 24.99,
+  premium: 28.99,
 };
 const COLOR_SURCHARGE: Record<Color, number> = {
   white: 0,
-  black: 1,
-  navy: 0.5,
+  black: 0,
+  navy: 0,
 };
 const SIZE_SURCHARGE: Record<string, number> = {
   S: 0,
   M: 0,
   L: 0,
-  XL: 1.5,
-  XXL: 2.5,
+  XL: 0,
+  XXL: 0,
 };
 const gbp = new Intl.NumberFormat("en-GB", {
   style: "currency",
