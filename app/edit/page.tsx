@@ -9,6 +9,7 @@ import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Star, Info, X } from "lucide-react";
+import { upload } from "@vercel/blob/client";
 
 /* ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "navy"];
@@ -130,6 +131,20 @@ function Dots() {
       <span className="inline-block animate-bounce">•</span>
     </span>
   );
+}
+
+async function uploadPrintPNGViaBlob(dataUrl: string): Promise<string> {
+  // Convert the data URL into a Blob, then a File (upload() expects File/Blob)
+  const pngBlob = await (await fetch(dataUrl)).blob(); // "image/png"
+  const file = new File([pngBlob], `print-${Date.now()}.png`, { type: "image/png" });
+
+  // Upload directly from the browser; your /api/blob/upload route handles the token exchange
+  const result = await upload(file.name, file, {
+    access: "public",
+    handleUploadUrl: "/api/blob/upload", // <-- exactly the route you just created
+  });
+
+  return result.url; // Public URL to use everywhere else
 }
 
 /* ---------- Text layer helpers ---------- */
@@ -1016,31 +1031,10 @@ export default function EditPage() {
       }
       setSavingPrint(true);
 
-      const dataUrl = await buildPrintPNG();
+      const dataUrl = await buildPrintPNG();            // same 3600×4800 PNG
+      const publicUrl = await uploadPrintPNGViaBlob(dataUrl); // NEW: direct upload
 
-      const res = await fetch("/api/print-file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: dataUrl }),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        setSavingPrint(false);
-        alert(`Print file failed: ${txt}`);
-        return;
-      }
-
-      const data = (await res.json()) as SaveResp;
-      const url = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
-
-      if (!url) {
-        setSavingPrint(false);
-        alert("Print file created but no URL returned.");
-        return;
-      }
-
-      setPrintFileUrl(url);
+      setPrintFileUrl(publicUrl);
       setSavingPrint(false);
     } catch (err: unknown) {
       console.error(err);
@@ -1049,38 +1043,48 @@ export default function EditPage() {
     }
   }
 
-  // ensure we have a print file before checkout (unchanged)
+  // ensure we have a print file before checkout (UPDATED to use direct upload)
   async function ensurePrintFile(): Promise<string> {
-    if (printFileUrl) return printFileUrl;
-    if (!chosenImage) throw new Error("No design image loaded.");
-    setSavingPrint(true);
+  if (printFileUrl) return printFileUrl;
+  if (!chosenImage) throw new Error("No design image loaded.");
+  setSavingPrint(true);
 
-    const dataUrl = await buildPrintPNG();
+  // Build the 3600×4800 PNG in-memory…
+  const dataUrl = await buildPrintPNG();
 
-    const res = await fetch("/api/print-file", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageUrl: dataUrl }),
-    });
+  // …upload it directly to Vercel Blob, get a public URL…
+  const publicUrl = await uploadPrintPNGViaBlob(dataUrl);
 
-    if (!res.ok) {
-      const txt = await res.text();
-      setSavingPrint(false);
-      throw new Error(txt || "Failed to create print file");
-    }
+  // …and tell your /api/print-file route about that URL (no big payloads).
+  const res = await fetch("/api/print-file", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: publicUrl }),
+  });
 
-    const data = (await res.json()) as SaveResp;
-    const url = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
-
-    if (!url) {
-      setSavingPrint(false);
-      throw new Error("Print file created but no URL returned.");
-    }
-
-    setPrintFileUrl(url);
+  if (!res.ok) {
+    const txt = await res.text();
     setSavingPrint(false);
-    return url;
+    throw new Error(txt || "Failed to create print file");
   }
+
+  const data = (await res.json()) as {
+    url?: string;
+    pngUrl?: string;
+    publicUrl?: string;
+    file?: { url?: string };
+  };
+
+  const finalUrl = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+  if (!finalUrl) {
+    setSavingPrint(false);
+    throw new Error("Print file created but no URL returned.");
+  }
+
+  setPrintFileUrl(finalUrl);
+  setSavingPrint(false);
+  return finalUrl;
+}
 
   /* ---------- Proceed to payment (Stripe) (unchanged) ---------- */
   async function handleCheckout() {
@@ -1706,7 +1710,9 @@ export default function EditPage() {
                 <span className="mr-1">Estimated delivery to United Kingdom:</span>
                 <span className="font-medium">4–6 days</span>
                 <span className="mx-2">•</span>
-                <span>Shipping starts at <span className="font-medium">£3.59</span></span>
+                <span>
+                  Shipping starts at <span className="font-medium">£3.59</span>
+                </span>
               </div>
 
               <div className="flex items-center justify-between text-sm">

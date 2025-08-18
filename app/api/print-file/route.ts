@@ -1,110 +1,96 @@
 // app/api/print-file/route.ts
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 
-// app/api/print-file/route.ts
-const OUT_W = 3600; // 12" * 300 DPI
-const OUT_H = 4800; // 16" * 300 DPI
-
-export const runtime = "nodejs";          // we use Buffer/Blob on Node
-export const dynamic = "force-dynamic";   // always run server-side
-
-// ---- Types for the request body (avoid `any`) ----
-type PrintFileBody = {
-  imageUrl?: string;
+type PrintfulFileResult = {
+  id?: number;
+  url?: string;
+  filename?: string;
+  type?: string;
 };
 
-function toPrintFileBody(x: unknown): PrintFileBody {
-  if (x && typeof x === "object") {
-    const rec = x as Record<string, unknown>;
-    if (typeof rec.imageUrl === "string") {
-      return { imageUrl: rec.imageUrl };
-    }
-  }
-  return {};
-}
-
-// Optional CORS/preflight support
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
-}
-
-function parseDataUrl(dataUrl: string): { mime: string; buffer: ArrayBuffer } {
-  // e.g. data:image/png;base64,AAAA...
-  const m = /^data:(.*?);base64,(.*)$/i.exec(dataUrl);
-  if (!m) throw new Error("Invalid data URL");
-  const mime = m[1] || "application/octet-stream";
-  const bin = Buffer.from(m[2], "base64");
-  // Convert Node Buffer -> ArrayBuffer for Blob()
-  const ab = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
-  return { mime, buffer: ab };
-}
+type PrintfulResp = {
+  code?: number;
+  result?: PrintfulFileResult;
+  error?: string;
+};
 
 export async function POST(req: Request) {
-  // Safely read JSON (avoid "Unexpected end of JSON input") without `any`
-  let body: PrintFileBody = {};
   try {
-    if (req.headers.get("content-type")?.includes("application/json")) {
-      const parsed: unknown = await req.json();
-      body = toPrintFileBody(parsed);
+    const body = (await req.json()) as { url?: string; imageUrl?: string };
+    const incomingUrl = body?.url ?? body?.imageUrl;
+
+    if (!incomingUrl || typeof incomingUrl !== "string") {
+      return NextResponse.json({ error: "Missing 'url'." }, { status: 400 });
     }
-  } catch {
-    body = {};
-  }
+    if (!/^https?:\/\//i.test(incomingUrl)) {
+      return NextResponse.json({ error: "URL must be http(s)." }, { status: 400 });
+    }
 
-  const imageUrl = body.imageUrl?.trim();
+    // (Optional) quick sanity check that it exists and looks like an image
+    try {
+      const head = await fetch(incomingUrl, { method: "HEAD" });
+      const ct = head.headers.get("content-type") || "";
+      if (!head.ok) throw new Error(`HEAD ${head.status}`);
+      if (!ct.startsWith("image/")) {
+        // Not fatal—some CDNs don't return proper HEAD content-type.
+        console.warn("[/api/print-file] Non-image content-type:", ct);
+      }
+    } catch (e) {
+      console.warn("[/api/print-file] HEAD check failed:", e);
+    }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json(
-      { error: "BLOB_READ_WRITE_TOKEN is not set" },
-      { status: 500 }
-    );
-  }
-  if (!imageUrl) {
-    return NextResponse.json({ error: "imageUrl is required" }, { status: 400 });
-  }
+    const key = process.env.PRINTFUL_API_KEY;
+    let pfResult: PrintfulFileResult | undefined;
 
-  try {
-    // Get the image as ArrayBuffer + contentType
-    let arrayBuffer: ArrayBuffer;
-    let contentType = "image/png";
+    if (key) {
+      // Forward the URL to Printful to create a file record (no bytes uploaded here)
+      const pfRes = await fetch("https://api.printful.com/files", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: incomingUrl }),
+      });
 
-    if (imageUrl.startsWith("data:")) {
-      const parsed = parseDataUrl(imageUrl);
-      arrayBuffer = parsed.buffer;
-      contentType = parsed.mime || "image/png";
-    } else {
-      const r = await fetch(imageUrl);
-      if (!r.ok) {
-        const txt = await r.text().catch(() => "");
+      const pfJson = (await pfRes.json()) as PrintfulResp;
+
+      if (!pfRes.ok) {
+        const msg = pfJson?.error || `Printful error (${pfRes.status})`;
+        console.error("[/api/print-file] Printful error:", msg);
+        // Fallback: still return the URL so your checkout can proceed using the public URL directly
         return NextResponse.json(
-          { error: `Failed to fetch image (${r.status}): ${txt.slice(0, 200)}` },
-          { status: 400 }
+          {
+            url: incomingUrl,
+            publicUrl: incomingUrl,
+            file: { url: incomingUrl },
+            warning: msg,
+          },
+          { status: 200 }
         );
       }
-      arrayBuffer = await r.arrayBuffer();
-      contentType = r.headers.get("content-type") || "image/png";
+
+      pfResult = pfJson?.result;
+    } else {
+      console.warn("[/api/print-file] PRINTFUL_API_KEY not set; returning pass-through URL.");
     }
 
-    // Upload to Vercel Blob (public)
-    const filename = `print/print_${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
-    const blobBody = new Blob([arrayBuffer], { type: contentType });
+    const finalUrl = pfResult?.url || incomingUrl;
 
-    const uploaded = await put(filename, blobBody, {
-      access: "public",
-      contentType,
-      addRandomSuffix: false,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
-
-    return NextResponse.json({ url: uploaded.url });
+    // Shape kept compatible with previous client parsing:
+    //   url | pngUrl | publicUrl | file.url
+    return NextResponse.json(
+      {
+        url: finalUrl,
+        publicUrl: finalUrl,
+        pngUrl: finalUrl,
+        fileId: pfResult?.id,
+        file: { url: finalUrl },
+      },
+      { status: 200 }
+    );
   } catch (err: unknown) {
+    console.error("[/api/print-file] Unexpected error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
