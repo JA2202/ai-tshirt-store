@@ -170,13 +170,24 @@ function Dots() {
   );
 }
 
+// ---- Error helpers (typed, no `any`) ----
+function extractMessage(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.message === "string") return obj.message;
+    const nested = obj.error;
+    if (nested && typeof nested === "object") {
+      const m = (nested as Record<string, unknown>).message;
+      if (typeof m === "string") return m;
+    }
+  }
+  return "";
+}
+
 // Helper: derive friendly error message
 function friendlyError(status: number | null, raw: unknown): string {
-  const text = typeof raw === "string"
-    ? raw
-    : typeof raw === "object" && raw && "message" in (raw as any)
-      ? String((raw as any).message)
-      : "";
+  const text = extractMessage(raw);
 
   // Content/safety
   if (/content|safety|policy|unsafe|inappropriate/i.test(text)) {
@@ -300,7 +311,7 @@ export default function GeneratePage() {
       }
       setImages(data.images || []);
       setRefine(finalPrompt);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       alert(friendlyError(null, e));
     } finally {
@@ -619,7 +630,7 @@ export default function GeneratePage() {
                             throw new Error(msg);
                           }
                           setImages(data.images || []);
-                        } catch (e: any) {
+                        } catch (e: unknown) {
                           console.error(e);
                           alert(friendlyError(null, e));
                         } finally {
