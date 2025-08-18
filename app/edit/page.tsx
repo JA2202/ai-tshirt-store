@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider";
 
 /* ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "navy"];
-const SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
+const SIZES = ["S", "M", "L", "XL", "XXL"];
 const MATERIALS: Material[] = ["standard", "eco", "premium"];
 /** Visual-only scale for the mockup behind the safe zone (does NOT affect safe zone). */
 const TEE_VISIBLE_SCALE = 1.45; // 1.00 = 100%, bump to taste (e.g., 1.08–1.20)
@@ -32,7 +32,6 @@ const COLOR_SURCHARGE: Record<Color, number> = {
   navy: 0.5,
 };
 const SIZE_SURCHARGE: Record<string, number> = {
-  XS: 0,
   S: 0,
   M: 0,
   L: 0,
@@ -262,8 +261,8 @@ export default function EditPage() {
     const desiredW = tW * preset.widthPctOfTee;
     const desiredH = desiredW * (4 / 3);
 
-    let srX = tX + preset.leftPctOfTee * tW;
-    let srY = tY + preset.topPctOfTee * tH;
+    const srX = tX + preset.leftPctOfTee * tW;
+    const srY = tY + preset.topPctOfTee * tH;
     let srW = desiredW;
     let srH = desiredH;
 
