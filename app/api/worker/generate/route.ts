@@ -21,6 +21,15 @@ type JobHash = {
   error?: string;
 };
 
+// Helper to read HTTP-ish status fields without using `any`
+function getHttpStatus(e: unknown): number | undefined {
+  if (typeof e === "object" && e !== null) {
+    const o = e as { status?: number; statusCode?: number };
+    return o.status ?? o.statusCode;
+  }
+  return undefined;
+}
+
 export async function POST(req: Request) {
   // Parse once so we can reuse jobId in the catch block
   const body = (await req.json().catch(() => null)) as { jobId?: string } | null;
@@ -84,9 +93,9 @@ export async function POST(req: Request) {
 
     await redis.hset(key, { status: "done", images: JSON.stringify(urls), error: "" });
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Generation failed";
-    const status = (err as any)?.status ?? (err as any)?.statusCode;
+    const status = getHttpStatus(err);
     const is429 = status === 429 || /rate\s*limit|exceeded the rate limit/i.test(message);
 
     if (is429) {
