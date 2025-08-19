@@ -1,77 +1,93 @@
-// /app/api/jobs/[id]/route.ts
+// app/api/worker/generate/route.ts
+import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
-import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
+import { put } from "@vercel/blob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type JobOut = {
-  status: "queued" | "working" | "done" | "failed";
-  images?: string[];
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+
+type JobStatus = "queued" | "working" | "done" | "failed";
+type JobHash = {
+  status: JobStatus;
+  createdAt: string;
+  prompt: string;
+  count: string;
+  size: "1024x1024" | "1024x1536" | "1536x1024";
+  quality: "low" | "high";
+  images?: string;
   error?: string;
 };
 
-// Be lenient with whatever ended up in Redis so the UI always gets an array.
-function coerceImages(raw: unknown): string[] {
-  if (typeof raw !== "string") return [];
-  const s = raw.trim();
-  if (!s) return [];
+export async function POST(req: Request) {
+  // Parse once so we can reuse jobId in the catch block
+  const body = (await req.json().catch(() => null)) as { jobId?: string } | null;
+  const jobId = body?.jobId;
+  if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
 
-  // Happy path: valid JSON array string
+  const key = `jobs:${jobId}`;
+
   try {
-    if (s.startsWith("[")) {
-      const arr = JSON.parse(s);
-      if (Array.isArray(arr)) {
-        return arr.filter((x): x is string => typeof x === "string");
+    const job = await redis.hgetall<JobHash>(key);
+    if (!job?.prompt) {
+      await redis.hset(key, { status: "failed", error: "Job not found" });
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
+    await redis.hset(key, { status: "working" });
+
+    const n = Math.min(8, Math.max(1, parseInt(job.count || "1", 10) || 1));
+    const result = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt: job.prompt,
+      size: job.size,
+      quality: job.quality, // "low" | "high"
+      n,
+    });
+
+    // Collect raw outputs (URLs or base64 data URLs)
+    const raw =
+      result.data
+        ?.map((d) => (d.url ? d.url : d.b64_json ? `data:image/png;base64,${d.b64_json}` : null))
+        .filter((u): u is string => Boolean(u)) ?? [];
+
+    if (raw.length === 0) {
+      await redis.hset(key, { status: "failed", error: "No images returned" });
+      return NextResponse.json({ error: "No images returned" }, { status: 502 });
+    }
+
+    // Upload each image to Vercel Blob -> store tiny public URLs in Redis
+    const urls: string[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const src = raw[i];
+      let bytes: Buffer;
+
+      if (src.startsWith("data:image")) {
+        const b64 = src.split(",", 2)[1] || "";
+        bytes = Buffer.from(b64, "base64");
+      } else {
+        const r = await fetch(src);
+        const ab = await r.arrayBuffer();
+        bytes = Buffer.from(ab);
       }
+
+      const filename = `designs/${jobId}/${i}.png`;
+      const { url } = await put(filename, bytes, {
+        access: "public",
+        contentType: "image/png",
+        addRandomSuffix: true,
+      });
+      urls.push(url);
     }
-    // A single JSON string (rare)
-    if (s.startsWith('"') && s.endsWith('"')) {
-      return [JSON.parse(s)];
-    }
-  } catch {
-    /* fall through to other coercions */
+
+    await redis.hset(key, { status: "done", images: JSON.stringify(urls), error: "" });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Generation failed";
+    console.error("worker error", { jobId, message });
+    await redis.hset(key, { status: "failed", error: message });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  // Single-quoted JSON (legacy/hand-written)
-  try {
-    if (s.includes("'")) {
-      const arr = JSON.parse(s.replace(/'/g, '"'));
-      if (Array.isArray(arr)) {
-        return arr.filter((x): x is string => typeof x === "string");
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-
-  // CSV or just one URL
-  if (s.includes(",")) {
-    return s.split(/\s*,\s*/).filter(Boolean);
-  }
-  return [s];
-}
-
-export async function GET(
-  _req: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
-  const { id } = await context.params;
-
-  const key = `jobs:${id}`;
-  const job = await redis.hgetall<Record<string, string>>(key);
-  if (!job || !job.status) {
-    return new Response("Not found", { status: 404 });
-  }
-
-  const out: JobOut = { status: job.status as JobOut["status"] };
-
-  if (job.status === "done") {
-    out.images = coerceImages(job.images);
-  }
-  if (job.error) out.error = job.error;
-
-  return NextResponse.json(out, {
-    headers: { "Cache-Control": "no-store" },
-  });
 }
