@@ -291,6 +291,31 @@ export default function GeneratePage() {
     setOpenModal(true);
   };
 
+  // ---- SMALL EDIT START: polling helpers + updated reallyGenerate ----
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  type JobStatus = "queued" | "working" | "done" | "failed";
+  interface JobResponse {
+    status: JobStatus;
+    images?: string[];
+    error?: string;
+  }
+
+  async function pollJob(jobId: string): Promise<string[]> {
+    let attempt = 0;
+    while (true) {
+      const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to fetch job status");
+      const data = (await res.json()) as JobResponse;
+
+      if (data.status === "done") return data.images ?? [];
+      if (data.status === "failed") throw new Error(data.error || "Generation failed.");
+
+      const delay = Math.min(1500 * Math.pow(1.3, attempt++), 5000);
+      await sleep(delay);
+    }
+  }
+
   const reallyGenerate = async () => {
     const finalPrompt = buildFinalPrompt(prompt);
     setOpenModal(false);
@@ -304,20 +329,38 @@ export default function GeneratePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: finalPrompt, count, size: "1024x1024", quality: "low" }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        const msg = friendlyError(res.status ?? null, data?.error || data);
-        throw new Error(msg);
+
+      // If queued (202), poll the job until done
+      if (res.status === 202) {
+        const { jobId } = (await res.json()) as { jobId: string };
+        const imgs = await pollJob(jobId);
+        setImages(imgs);
+        setRefine(finalPrompt);
+        return;
       }
-      setImages(data.images || []);
-      setRefine(finalPrompt);
+
+      // Direct response (200)
+      if (res.ok) {
+        const data = (await res.json()) as { images?: string[]; error?: string };
+        if (!data.images) throw new Error(data.error || "No images returned.");
+        setImages(data.images);
+        setRefine(finalPrompt);
+        return;
+      }
+
+      // Non-OK → friendly error
+      const data = await res.json().catch(() => ({}));
+      const msg = friendlyError(res.status ?? null, (data as { error?: string }).error || data);
+      throw new Error(msg);
     } catch (e: unknown) {
       console.error(e);
-      alert(friendlyError(null, e));
+      const msg = e instanceof Error ? e.message : "Image generation failed. Please try again.";
+      alert(msg);
     } finally {
       setLoading(false);
     }
   };
+  // ---- SMALL EDIT END ----
 
   const onSurprise = () => {
     const idea = SURPRISE[Math.floor(Math.random() * SURPRISE.length)];

@@ -1,15 +1,13 @@
 // app/api/generate/route.ts
-import OpenAI from "openai";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { redis } from "@/lib/redis";
+import { qstash, WORKER_URL } from "@/lib/qstash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Strict literal unions
+// Strict literal unions (keep same as before so callers don't break)
 type ImgSize = "1024x1024" | "1024x1536" | "1536x1024" | "auto";
 type ImgQuality = "low" | "medium" | "high";
 
@@ -21,65 +19,103 @@ const ALLOWED_SIZES: readonly ImgSize[] = [
 ];
 const ALLOWED_QUALITIES: readonly ImgQuality[] = ["low", "medium", "high"];
 
-export async function POST(req: Request) {
+type GenerateBody = {
+  prompt: string;
+  count?: number;
+  size?: ImgSize | string;
+  quality?: ImgQuality | string;
+};
+
+type JobStatus = "queued" | "working" | "done" | "failed";
+
+type JobRecord = {
+  status: JobStatus;
+  createdAt: number;
+  prompt: string;
+  count: number;
+  size: "1024x1024" | "1024x1536" | "1536x1024"; // worker needs concrete values
+  // We map qualities down to the two OpenAI tiers the worker uses
+  quality: "low" | "high";
+  // Filled by worker later:
+  images?: string; // JSON.stringified string[]
+  error?: string;
+};
+
+export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as Partial<{
-      prompt: string;
-      count: number;
-      size: ImgSize | string;
-      quality: ImgQuality | string;
-    }>;
+    const body = (await req.json()) as GenerateBody;
 
+    // --- Basic validation (kept from your previous route) ---
     const prompt = body?.prompt;
-    const countRaw = Number(body?.count ?? 6);
-    const requestedSize = (body?.size ?? "1024x1024") as string;
-    const requestedQuality = (body?.quality ?? "low") as string; // cheap default
-
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
-    if (!process.env.OPENAI_API_KEY) {
+
+    // Clamp variants
+    const countRaw = Number(body?.count ?? 6);
+    const count = Math.min(8, Math.max(1, Number.isFinite(countRaw) ? countRaw : 6));
+
+    // Size normalization (treat "auto" as 1024x1024 like before)
+    const reqSize = (body?.size ?? "1024x1024") as string;
+    const sizeAllowed = ALLOWED_SIZES.includes(reqSize as ImgSize)
+      ? (reqSize as ImgSize)
+      : "1024x1024";
+    const normalizedSize: "1024x1024" | "1024x1536" | "1536x1024" =
+      sizeAllowed === "auto" ? "1024x1024"
+      : (sizeAllowed as Exclude<ImgSize, "auto">);
+
+    // Quality normalization:
+    // your UI accepts low / medium / high but OpenAI effectively has 2 tiers.
+    // Map: high -> "high", everything else -> "low".
+    const reqQuality = (body?.quality ?? "low") as string;
+    const qualityAllowed = ALLOWED_QUALITIES.includes(reqQuality as ImgQuality)
+      ? (reqQuality as ImgQuality)
+      : "low";
+    const normalizedQuality: "low" | "high" =
+      qualityAllowed === "high" ? "high" : "low";
+
+    // Ensure infra keys exist (worker needs these)
+    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
       return NextResponse.json(
-        { error: "OPENAI_API_KEY is missing on the server" },
+        { error: "Redis is not configured on the server" },
+        { status: 500 }
+      );
+    }
+    if (!process.env.QSTASH_TOKEN) {
+      return NextResponse.json(
+        { error: "QStash is not configured on the server" },
         { status: 500 }
       );
     }
 
-    const size: ImgSize = (ALLOWED_SIZES.includes(requestedSize as ImgSize)
-      ? requestedSize
-      : "1024x1024") as ImgSize;
+    // --- Create and persist the job ---
+    const jobId = randomUUID();
+    const key = `jobs:${jobId}`;
 
-    const quality: ImgQuality = (ALLOWED_QUALITIES.includes(
-      requestedQuality as ImgQuality
-    )
-      ? requestedQuality
-      : "low") as ImgQuality;
-
-    const n = Math.min(8, Math.max(1, Number.isFinite(countRaw) ? countRaw : 6));
-
-    const r = await openai.images.generate({
-      model: "gpt-image-1",
+    const job: JobRecord = {
+      status: "queued",
+      createdAt: Date.now(),
       prompt,
-      size,
-      quality, // "low" | "medium" | "high"
-      n,       // ask for n variants in one call
-      // background: "transparent", // uncomment if you want transparent PNGs
+      count,
+      size: normalizedSize,
+      quality: normalizedQuality,
+    };
+
+    await redis.hset(key, job as unknown as Record<string, string | number>);
+    await redis.expire(key, 60 * 60 * 24); // 24h TTL
+
+    // --- Enqueue for the worker (QStash will handle retries/429/5xx) ---
+    await qstash.publishJSON({
+      url: WORKER_URL,
+      body: { jobId },
     });
 
-    const images =
-      r.data
-        ?.map((d) => (d.url ? d.url : d.b64_json ? `data:image/png;base64,${d.b64_json}` : null))
-        .filter((u): u is string => Boolean(u)) ?? [];
-
-    if (images.length === 0) {
-      return NextResponse.json({ error: "No images returned" }, { status: 502 });
-    }
-
-    return NextResponse.json({ images });
-  } catch (err: unknown) {
+    // 202 Accepted: client should poll /api/jobs/:id
+    return NextResponse.json({ jobId }, { status: 202 });
+  } catch (err) {
     console.error(err);
     const message =
-      err instanceof Error ? err.message : "Image generation failed";
+      err instanceof Error ? err.message : "Failed to enqueue generation";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
