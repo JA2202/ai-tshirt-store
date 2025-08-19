@@ -8,13 +8,12 @@ export const dynamic = "force-dynamic";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-// Matches what you store in /api/generate
 type JobStatus = "queued" | "working" | "done" | "failed";
 type JobHash = {
   status: JobStatus;
-  createdAt: string;      // stored as string in Redis hash
+  createdAt: string;
   prompt: string;
-  count: string;          // Redis stores numbers as strings
+  count: string;
   size: "1024x1024" | "1024x1536" | "1536x1024";
   quality: "low" | "high";
   images?: string;
@@ -22,26 +21,28 @@ type JobHash = {
 };
 
 export async function POST(req: Request) {
-  try {
-    const { jobId } = (await req.json()) as { jobId?: string };
-    if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
+  // Parse once so we can reuse jobId in the catch block
+  const body = (await req.json().catch(() => null)) as { jobId?: string } | null;
+  const jobId = body?.jobId;
+  if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
 
-    const key = `jobs:${jobId}`;
+  const key = `jobs:${jobId}`;
+
+  try {
     const job = await redis.hgetall<JobHash>(key);
-    if (!job || !job.prompt) {
+    if (!job?.prompt) {
+      await redis.hset(key, { status: "failed", error: "Job not found" });
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
-    // Mark working
     await redis.hset(key, { status: "working" });
 
-    const n = Math.min(8, Math.max(1, Number.parseInt(job.count || "1", 10) || 1));
-
+    const n = Math.min(8, Math.max(1, parseInt(job.count || "1", 10) || 1));
     const result = await openai.images.generate({
       model: "gpt-image-1",
       prompt: job.prompt,
-      size: job.size,            // already normalized by /api/generate
-      quality: job.quality,      // "low" | "high"
+      size: job.size,
+      quality: job.quality, // "low" | "high"
       n,
     });
 
@@ -55,24 +56,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No images returned" }, { status: 502 });
     }
 
-    // Write result so the poller flips to "done"
-    await redis.hset(key, {
-      status: "done",
-      images: JSON.stringify(images),
-      error: "",
-    });
-
-    // QStash only needs a 200 OK
+    await redis.hset(key, { status: "done", images: JSON.stringify(images), error: "" });
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
-    // We can’t know jobId on parse errors, so only write when we have it
-    try {
-      const { jobId } = (await req.json()) as { jobId?: string };
-      if (jobId) {
-        await redis.hset(`jobs:${jobId}`, { status: "failed", error: message });
-      }
-    } catch {}
+    console.error("worker error", { jobId, message });
+    await redis.hset(key, { status: "failed", error: message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
