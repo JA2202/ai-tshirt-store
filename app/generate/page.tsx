@@ -217,8 +217,12 @@ export default function GeneratePage() {
   const { prompt, setPrompt, images, setImages, chosenImage, setChosenImage } = useDesignStore();
 
   const [loading, setLoading] = useState(false);
-  const [count, setCount] = useState<number>(4);
+  // REMOVED: const [count, setCount] = useState<number>(4);
+  const COUNT = 3; // always request 3 variants
   const [openModal, setOpenModal] = useState(false);
+
+  // Queued popup
+  const [queuedOpen, setQueuedOpen] = useState(false);
 
   // Modal options
   const [styleKey, setStyleKey] = useState<StyleKey>("realistic");
@@ -308,6 +312,10 @@ export default function GeneratePage() {
       if (!res.ok) throw new Error("Failed to fetch job status");
       const data = (await res.json()) as JobResponse;
 
+      // Toggle queued popup
+      if (data.status === "queued") setQueuedOpen(true);
+      if (data.status === "working") setQueuedOpen(false);
+
       if (data.status === "done") return data.images ?? [];
       if (data.status === "failed") throw new Error(data.error || "Generation failed.");
 
@@ -327,7 +335,7 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: finalPrompt, count, size: "1024x1024", quality: "low" }),
+        body: JSON.stringify({ prompt: finalPrompt, count: COUNT, size: "1024x1024", quality: "low" }),
       });
 
       // If queued (202), poll the job until done
@@ -358,6 +366,7 @@ export default function GeneratePage() {
       alert(msg);
     } finally {
       setLoading(false);
+      setQueuedOpen(false); // ensure popup closes
     }
   };
   // ---- SMALL EDIT END ----
@@ -503,7 +512,7 @@ export default function GeneratePage() {
                 onChange={(e) => onDesignUpload(e.target.files?.[0] ?? null)}
               />
 
-              {/* Actions + Variants container */}
+              {/* Actions container */}
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 {/* MOBILE layout */}
                 <div className="flex w-full flex-col gap-2 sm:hidden">
@@ -564,26 +573,6 @@ export default function GeneratePage() {
                     Upload your design
                   </Button>
                 </div>
-
-                {/* Variants */}
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">Variants</span>
-                  <div className="flex gap-1.5">
-                    {[2, 4, 6, 8].map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => setCount(n)}
-                        className={`rounded-full px-3 py-1.5 text-sm transition ${
-                          count === n
-                            ? "bg-black text-white"
-                            : "bg-zinc-100 hover:bg-zinc-200"
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -594,7 +583,7 @@ export default function GeneratePage() {
           {loading && (
             <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-                {Array.from({ length: count }).map((_, i) => (
+                {Array.from({ length: COUNT }).map((_, i) => (
                   <div key={i} className="aspect-square w-full animate-pulse rounded-xl bg-zinc-100" />
                 ))}
               </div>
@@ -662,7 +651,7 @@ export default function GeneratePage() {
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                               prompt: refine,
-                              count,
+                              count: COUNT,
                               size: "1024x1024",
                               quality: "low",
                             }),
@@ -678,6 +667,7 @@ export default function GeneratePage() {
                           alert(friendlyError(null, e));
                         } finally {
                           setLoading(false);
+                          setQueuedOpen(false);
                         }
                       }}
                       className="h-11"
@@ -875,6 +865,22 @@ export default function GeneratePage() {
             >
               Apply & Generate
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Queued notice */}
+      <Dialog open={queuedOpen} onOpenChange={setQueuedOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Queued — starting soon</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-zinc-700">
+            Your request is in line. Estimated start: <strong>~15–30 seconds</strong>.
+            This will update automatically—no need to refresh.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQueuedOpen(false)}>Hide</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

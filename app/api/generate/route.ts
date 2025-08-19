@@ -52,9 +52,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Clamp variants
-    const countRaw = Number(body?.count ?? 6);
-    const count = Math.min(8, Math.max(1, Number.isFinite(countRaw) ? countRaw : 6));
-
+    //const countRaw = Number(body?.count ?? 6);
+    //const count = Math.min(8, Math.max(1, Number.isFinite(countRaw) ? countRaw : 6));
+    const count =3;
+    
     // Size normalization (treat "auto" as 1024x1024 like before)
     const reqSize = (body?.size ?? "1024x1024") as string;
     const sizeAllowed = ALLOWED_SIZES.includes(reqSize as ImgSize)
