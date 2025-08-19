@@ -104,10 +104,11 @@ export async function POST(req: NextRequest) {
     await redis.hset(key, job as unknown as Record<string, string | number>);
     await redis.expire(key, 60 * 60 * 24); // 24h TTL
 
-    // --- Enqueue for the worker (QStash will handle retries/429/5xx) ---
+    // --- Enqueue for the worker via a QStash Queue (smooth bursts) ---
     await qstash.publishJSON({
       url: WORKER_URL,
       body: { jobId },
+      queue: "image-gen", // <-- publish through your queue (Parallelism 1–2)
     });
 
     // 202 Accepted: client should poll /api/jobs/:id

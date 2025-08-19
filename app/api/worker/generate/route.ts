@@ -86,6 +86,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
+    const status = (err as any)?.status ?? (err as any)?.statusCode;
+    const is429 = status === 429 || /rate\s*limit|exceeded the rate limit/i.test(message);
+
+    if (is429) {
+      // IMPORTANT: don’t mark failed; let QStash retry on 429.
+      console.warn("worker rate limited — QStash will retry", { jobId, message });
+      return NextResponse.json({ retry: true, error: message }, { status: 429 });
+    }
+
     console.error("worker error", { jobId, message });
     await redis.hset(key, { status: "failed", error: message });
     return NextResponse.json({ error: message }, { status: 500 });
