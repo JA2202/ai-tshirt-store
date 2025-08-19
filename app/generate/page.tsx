@@ -18,7 +18,6 @@ import {
 type StyleKey =
   | "realistic" | "cartoon" | "anime" | "fine_line"
   | "minimal" | "vintage" | "graphic_logo" | "other"
-  // NEW keys for your preset list (keeping previous keys for compatibility)
   | "chibi" | "pixar_like" | "disney_like" | "comic"
   | "cyberpunk" | "synthwave" | "pixel_art" | "graffiti"
   | "oil_painting" | "logo";
@@ -38,7 +37,6 @@ const STYLES: { key: StyleKey; label: string; token: string }[] = [
   { key: "oil_painting",label: "Oil Painting", token: "oil painting, visible brush strokes, impasto texture" },
   { key: "fine_line",   label: "Fine line", token: "minimal fine line art, single-colour, delicate lines" },
   { key: "logo",        label: "Logo", token: "vector style, logo-ready, solid fills, high contrast" },
-  // Keep "Other" so users can still enter a custom style if they want
   { key: "other",       label: "Other", token: "" },
 ];
 
@@ -188,27 +186,21 @@ function extractMessage(raw: unknown): string {
 // Helper: derive friendly error message
 function friendlyError(status: number | null, raw: unknown): string {
   const text = extractMessage(raw);
-
-  // Content/safety
   if (/content|safety|policy|unsafe|inappropriate/i.test(text)) {
     return "Inappropriate or unsafe prompt. Try rewording in a family-friendly way.";
   }
-  // Rate limit
   if (status === 429 || /rate limit/i.test(text)) {
     return "Too many requests right now. Please try again in a moment.";
   }
-  // Billing/Quota
   if (status === 402 || status === 403 || /quota|billing|credit/i.test(text)) {
     return "Out of credits or quota. Try again later or check your plan.";
   }
-  // Network/server
   if (status && status >= 500) {
     return "Temporary server issue. Please retry.";
   }
   if (!status && !text) {
     return "Network issue. Check your connection and try again.";
   }
-  // Fallback to API message if present
   return text || "Image generation failed. Please try again.";
 }
 
@@ -217,12 +209,11 @@ export default function GeneratePage() {
   const { prompt, setPrompt, images, setImages, chosenImage, setChosenImage } = useDesignStore();
 
   const [loading, setLoading] = useState(false);
-  // REMOVED: const [count, setCount] = useState<number>(4);
-  const COUNT = 3; // always request 3 variants
   const [openModal, setOpenModal] = useState(false);
 
-  // Queued popup
+  // NEW: queued popup state + timer ref
   const [queuedOpen, setQueuedOpen] = useState(false);
+  const queuedSinceRef = useRef<number | null>(null);
 
   // Modal options
   const [styleKey, setStyleKey] = useState<StyleKey>("realistic");
@@ -265,7 +256,7 @@ export default function GeneratePage() {
   useEffect(() => {
     const el = showcaseRef.current;
     if (!el) return;
-    if (el.scrollWidth <= el.clientWidth) return; // nothing to scroll
+    if (el.scrollWidth <= el.clientWidth) return;
     let dir = 1;
     const id = window.setInterval(() => {
       if (!el) return;
@@ -295,7 +286,7 @@ export default function GeneratePage() {
     setOpenModal(true);
   };
 
-  // ---- SMALL EDIT START: polling helpers + updated reallyGenerate ----
+  // ---- polling helpers + updated reallyGenerate ----
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   type JobStatus = "queued" | "working" | "done" | "failed";
@@ -312,9 +303,16 @@ export default function GeneratePage() {
       if (!res.ok) throw new Error("Failed to fetch job status");
       const data = (await res.json()) as JobResponse;
 
-      // Toggle queued popup
-      if (data.status === "queued") setQueuedOpen(true);
-      if (data.status === "working") setQueuedOpen(false);
+      // ---- Only show queued popup if queued > 5s (NEW) ----
+      if (data.status === "queued") {
+        if (queuedSinceRef.current == null) queuedSinceRef.current = Date.now();
+        const waited = Date.now() - queuedSinceRef.current;
+        if (!queuedOpen && waited > 5000) setQueuedOpen(true);
+      } else {
+        queuedSinceRef.current = null;
+        if (queuedOpen) setQueuedOpen(false);
+      }
+      // ------------------------------------------------------
 
       if (data.status === "done") return data.images ?? [];
       if (data.status === "failed") throw new Error(data.error || "Generation failed.");
@@ -323,6 +321,8 @@ export default function GeneratePage() {
       await sleep(delay);
     }
   }
+
+  const VARIANTS = 3; // fixed
 
   const reallyGenerate = async () => {
     const finalPrompt = buildFinalPrompt(prompt);
@@ -335,10 +335,9 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: finalPrompt, count: COUNT, size: "1024x1024", quality: "low" }),
+        body: JSON.stringify({ prompt: finalPrompt, count: VARIANTS, size: "1024x1024", quality: "low" }),
       });
 
-      // If queued (202), poll the job until done
       if (res.status === 202) {
         const { jobId } = (await res.json()) as { jobId: string };
         const imgs = await pollJob(jobId);
@@ -347,7 +346,6 @@ export default function GeneratePage() {
         return;
       }
 
-      // Direct response (200)
       if (res.ok) {
         const data = (await res.json()) as { images?: string[]; error?: string };
         if (!data.images) throw new Error(data.error || "No images returned.");
@@ -356,7 +354,6 @@ export default function GeneratePage() {
         return;
       }
 
-      // Non-OK → friendly error
       const data = await res.json().catch(() => ({}));
       const msg = friendlyError(res.status ?? null, (data as { error?: string }).error || data);
       throw new Error(msg);
@@ -366,10 +363,11 @@ export default function GeneratePage() {
       alert(msg);
     } finally {
       setLoading(false);
-      setQueuedOpen(false); // ensure popup closes
+      // reset queue popup state (NEW)
+      setQueuedOpen(false);
+      queuedSinceRef.current = null;
     }
   };
-  // ---- SMALL EDIT END ----
 
   const onSurprise = () => {
     const idea = SURPRISE[Math.floor(Math.random() * SURPRISE.length)];
@@ -414,7 +412,6 @@ export default function GeneratePage() {
       <header className="mx-auto w-full max-w-6xl px-4 py-4">
         <div className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2" aria-label="Threadlab home">
-            {/* Put your real logo file in /public and update src if needed */}
             <img
               src="/logo.png"
               alt="Threadlab"
@@ -487,7 +484,7 @@ export default function GeneratePage() {
         </div>
       </section>
 
-      {/* App section (untouched logic/UI) */}
+      {/* App section */}
       <section className="mx-auto mt-4 w-full max-w-5xl px-3">
         <Stepper current={1} />
 
@@ -512,7 +509,7 @@ export default function GeneratePage() {
                 onChange={(e) => onDesignUpload(e.target.files?.[0] ?? null)}
               />
 
-              {/* Actions container */}
+              {/* Actions */}
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 {/* MOBILE layout */}
                 <div className="flex w-full flex-col gap-2 sm:hidden">
@@ -583,7 +580,7 @@ export default function GeneratePage() {
           {loading && (
             <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-                {Array.from({ length: COUNT }).map((_, i) => (
+                {Array.from({ length: VARIANTS }).map((_, i) => (
                   <div key={i} className="aspect-square w-full animate-pulse rounded-xl bg-zinc-100" />
                 ))}
               </div>
@@ -651,7 +648,7 @@ export default function GeneratePage() {
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                               prompt: refine,
-                              count: COUNT,
+                              count: VARIANTS,
                               size: "1024x1024",
                               quality: "low",
                             }),
@@ -667,7 +664,6 @@ export default function GeneratePage() {
                           alert(friendlyError(null, e));
                         } finally {
                           setLoading(false);
-                          setQueuedOpen(false);
                         }
                       }}
                       className="h-11"
@@ -736,7 +732,6 @@ export default function GeneratePage() {
 
       {/* MODAL: Style / Transparent / Reference */}
       <Dialog open={openModal} onOpenChange={setOpenModal}>
-        {/* constrain height + allow scrolling; add generous side margin on mobile */}
         <DialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[calc(100vw-2rem)] sm:max-w-lg max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain break-words">
           <DialogHeader>
             <DialogTitle>Style & options</DialogTitle>
@@ -772,7 +767,6 @@ export default function GeneratePage() {
                       }`}
                       title={s.label}
                     >
-                      {/* Style thumbnail (temp JPGs in /public/styles/<key>.jpg) */}
                       <img
                         src={`/styles/${s.key}.jpg`}
                         alt=""
@@ -785,7 +779,6 @@ export default function GeneratePage() {
                   ))}
                 </div>
 
-                {/* Custom style field shown when "Other" is selected */}
                 {styleKey === "other" && (
                   <Input
                     value={customStyle}
@@ -798,7 +791,7 @@ export default function GeneratePage() {
             </details>
           </div>
 
-          {/* Toggles row: Transparent + Relaxed filtering */}
+          {/* Toggles row */}
           <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
             <label htmlFor="transparent-bg" className="flex min-w-0 items-center gap-2">
               <input
@@ -830,7 +823,6 @@ export default function GeneratePage() {
 
           <div className="mt-4">
             <div className="mb-2 text-sm">Upload reference (optional)</div>
-            {/* wrapper to prevent long filenames from forcing width */}
             <div className="overflow-hidden">
               <input
                 type="file"
@@ -850,7 +842,6 @@ export default function GeneratePage() {
             )}
           </div>
 
-          {/* footer stacks on small screens to avoid overflow */}
           <DialogFooter className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
             <Button
               variant="outline"
@@ -869,18 +860,20 @@ export default function GeneratePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Queued notice */}
+      {/* QUEUED POPUP (unchanged UI, new trigger logic above) */}
       <Dialog open={queuedOpen} onOpenChange={setQueuedOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Queued — starting soon</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-zinc-700">
-            Your request is in line. Estimated start: <strong>~15–30 seconds</strong>.
-            This will update automatically—no need to refresh.
+          <p className="text-sm">
+            Your request is in line. Estimated start: <b>~15–30 seconds</b>. This will
+            update automatically—no need to refresh.
           </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setQueuedOpen(false)}>Hide</Button>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setQueuedOpen(false)}>
+              Hide
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
