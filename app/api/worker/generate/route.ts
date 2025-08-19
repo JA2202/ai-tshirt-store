@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import OpenAI from "openai";
+import { put } from "@vercel/blob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,17 +47,42 @@ export async function POST(req: Request) {
       n,
     });
 
-    const images =
+    // Collect raw outputs (URLs or base64 data URLs)
+    const raw =
       result.data
         ?.map((d) => (d.url ? d.url : d.b64_json ? `data:image/png;base64,${d.b64_json}` : null))
         .filter((u): u is string => Boolean(u)) ?? [];
 
-    if (images.length === 0) {
+    if (raw.length === 0) {
       await redis.hset(key, { status: "failed", error: "No images returned" });
       return NextResponse.json({ error: "No images returned" }, { status: 502 });
     }
 
-    await redis.hset(key, { status: "done", images: JSON.stringify(images), error: "" });
+    // Upload each image to Vercel Blob -> store tiny public URLs in Redis
+    const urls: string[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const src = raw[i];
+      let bytes: Buffer;
+
+      if (src.startsWith("data:image")) {
+        const b64 = src.split(",", 2)[1] || "";
+        bytes = Buffer.from(b64, "base64");
+      } else {
+        const r = await fetch(src);
+        const ab = await r.arrayBuffer();
+        bytes = Buffer.from(ab);
+      }
+
+      const filename = `designs/${jobId}/${i}.png`;
+      const { url } = await put(filename, bytes, {
+        access: "public",
+        contentType: "image/png",
+        addRandomSuffix: true,
+      });
+      urls.push(url);
+    }
+
+    await redis.hset(key, { status: "done", images: JSON.stringify(urls), error: "" });
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
