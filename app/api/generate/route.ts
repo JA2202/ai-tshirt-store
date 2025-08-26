@@ -24,6 +24,8 @@ type GenerateBody = {
   count?: number;
   size?: ImgSize | string;
   quality?: ImgQuality | string;
+  // NEW: optional flag to request transparent background via worker (BiRefNet)
+  transparent_background?: boolean;
 };
 
 type JobStatus = "queued" | "working" | "done" | "failed";
@@ -39,6 +41,8 @@ type JobRecord = {
   // Filled by worker later:
   images?: string; // JSON.stringified string[]
   error?: string;
+  // NEW: persisted as "1"/"0" so worker can read a simple flag
+  transparent?: "1" | "0";
 };
 
 export async function POST(req: NextRequest) {
@@ -51,11 +55,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    // Clamp variants
-    //const countRaw = Number(body?.count ?? 6);
-    //const count = Math.min(8, Math.max(1, Number.isFinite(countRaw) ? countRaw : 6));
-    const count =3;
-    
+    // Clamp variants (fixed 3 as per your current implementation)
+    const count = 3;
+
     // Size normalization (treat "auto" as 1024x1024 like before)
     const reqSize = (body?.size ?? "1024x1024") as string;
     const sizeAllowed = ALLOWED_SIZES.includes(reqSize as ImgSize)
@@ -74,6 +76,9 @@ export async function POST(req: NextRequest) {
       : "low";
     const normalizedQuality: "low" | "high" =
       qualityAllowed === "high" ? "high" : "low";
+
+    // NEW: normalize transparent background flag
+    const transparentFlag = body?.transparent_background === true ? "1" : "0";
 
     // Ensure infra keys exist (worker needs these)
     if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
@@ -100,6 +105,7 @@ export async function POST(req: NextRequest) {
       count,
       size: normalizedSize,
       quality: normalizedQuality,
+      transparent: transparentFlag, // NEW
     };
 
     await redis.hset(key, job as unknown as Record<string, string | number>);

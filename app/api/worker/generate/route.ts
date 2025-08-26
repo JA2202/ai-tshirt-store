@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import OpenAI from "openai";
 import { put } from "@vercel/blob";
+// ADD ↓
+import { falGenerateImagen4Fast, falRemoveBackground } from "@/lib/providers/fal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +21,8 @@ type JobHash = {
   quality: "low" | "high";
   images?: string;
   error?: string;
+  // ADD ↓ (boolean persisted as "1"|"0" to match your existing stringy style)
+  transparent?: "1" | "0";
 };
 
 // Helper to read HTTP-ish status fields without using `any`
@@ -28,6 +32,60 @@ function getHttpStatus(e: unknown): number | undefined {
     return o.status ?? o.statusCode;
   }
   return undefined;
+}
+
+// ADD ↓ provider selection + gen helper
+async function generateWithProvider(job: JobHash, n: number): Promise<string[]> {
+  const primary = (process.env.IMAGE_PROVIDER_PRIMARY || "openai").toLowerCase();
+  const overflow = (process.env.IMAGE_OVERFLOW_PROVIDER || "").toLowerCase();
+
+  // Helper to run OpenAI (your current behavior)
+  const runOpenAI = async (): Promise<string[]> => {
+    const result = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt: job.prompt,
+      size: job.size,
+      quality: job.quality, // "low" | "high"
+      n,
+    });
+
+    const raw =
+      result.data
+        ?.map((d) => (d.url ? d.url : d.b64_json ? `data:image/png;base64,${d.b64_json}` : null))
+        .filter((u): u is string => Boolean(u)) ?? [];
+
+    if (raw.length === 0) throw Object.assign(new Error("No images returned"), { status: 502 });
+    return raw;
+  };
+
+  // Helper to run fal (Imagen4 fast). Aspect ratio: keep 1:1 because your UI posts 1024x1024
+  const runFal = async (): Promise<string[]> => {
+    const urls = await falGenerateImagen4Fast({
+      prompt: job.prompt,
+      numImages: n,
+      aspectRatio: "1:1",
+    });
+    if (urls.length === 0) throw Object.assign(new Error("No images returned (fal)"), { status: 502 });
+    return urls;
+  };
+
+  if (primary === "fal") {
+    // fal as primary
+    return await runFal();
+  }
+
+  // OpenAI primary; try → on rate-limit/server error and overflow=fal, fall back
+  try {
+    return await runOpenAI();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    const code = getHttpStatus(e);
+    const isRetryable = code === 429 || (code != null && code >= 500) || /rate\s*limit/i.test(msg);
+    if (overflow === "fal" && isRetryable) {
+      return await runFal();
+    }
+    throw e; // preserve original behavior
+  }
 }
 
 export async function POST(req: Request) {
@@ -48,27 +106,12 @@ export async function POST(req: Request) {
     await redis.hset(key, { status: "working" });
 
     const n = Math.min(8, Math.max(1, parseInt(job.count || "1", 10) || 1));
-    const result = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt: job.prompt,
-      size: job.size,
-      quality: job.quality, // "low" | "high"
-      n,
-    });
 
-    // Collect raw outputs (URLs or base64 data URLs)
-    const raw =
-      result.data
-        ?.map((d) => (d.url ? d.url : d.b64_json ? `data:image/png;base64,${d.b64_json}` : null))
-        .filter((u): u is string => Boolean(u)) ?? [];
+    // NEW: provider-aware generation with optional fallback to fal
+    const raw = await generateWithProvider(job, n);
 
-    if (raw.length === 0) {
-      await redis.hset(key, { status: "failed", error: "No images returned" });
-      return NextResponse.json({ error: "No images returned" }, { status: 502 });
-    }
-
-    // Upload each image to Vercel Blob -> store tiny public URLs in Redis
-    const urls: string[] = [];
+    // Upload each image to Vercel Blob (originals first)
+    const originalUrls: string[] = [];
     for (let i = 0; i < raw.length; i++) {
       const src = raw[i];
       let bytes: Buffer;
@@ -88,10 +131,41 @@ export async function POST(req: Request) {
         contentType: "image/png",
         addRandomSuffix: true,
       });
-      urls.push(url);
+      originalUrls.push(url);
     }
 
-    await redis.hset(key, { status: "done", images: JSON.stringify(urls), error: "" });
+    // NEW: optional background removal (transparent PNG) using fal-ai/birefnet/v2
+    // Only when the job flag is set OR when env forces finals-only behavior.
+    const wantTransparent = job.transparent === "1";
+    const useBgRemoval =
+      wantTransparent && (process.env.IMAGE_BG_REMOVAL_PROVIDER || "").toLowerCase() === "fal-birefnet-v2";
+
+    const finalUrls: string[] = [];
+    if (useBgRemoval) {
+      for (let i = 0; i < originalUrls.length; i++) {
+        try {
+          const cutUrl = await falRemoveBackground(originalUrls[i]); // returns fal-hosted URL
+          // Fetch, store cut-out PNG to your Blob (so you control retention/CDN)
+          const r = await fetch(cutUrl);
+          const ab = await r.arrayBuffer();
+          const bytes = Buffer.from(ab);
+          const filename = `designs/${jobId}/${i}-cutout.png`;
+          const { url } = await put(filename, bytes, {
+            access: "public",
+            contentType: "image/png",
+            addRandomSuffix: true,
+          });
+          finalUrls.push(url);
+        } catch (e) {
+          console.warn("BiRefNet failed; using original", { jobId, i, e });
+          finalUrls.push(originalUrls[i]);
+        }
+      }
+    } else {
+      finalUrls.push(...originalUrls);
+    }
+
+    await redis.hset(key, { status: "done", images: JSON.stringify(finalUrls), error: "" });
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Generation failed";

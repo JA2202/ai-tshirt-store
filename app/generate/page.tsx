@@ -335,7 +335,7 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: finalPrompt, count: VARIANTS, size: "1024x1024", quality: "low" }),
+        body: JSON.stringify({ prompt: finalPrompt, count: VARIANTS, size: "1024x1024", quality: "low", transparent_background: transparent }),
       });
 
       if (res.status === 202) {
@@ -651,6 +651,7 @@ export default function GeneratePage() {
                               count: VARIANTS,
                               size: "1024x1024",
                               quality: "low",
+                              transparent_background: transparent,
                             }),
                           });
                           const data = await res.json();
