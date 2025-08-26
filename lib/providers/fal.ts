@@ -1,6 +1,7 @@
 // lib/providers/fal.ts
 import { fal } from "@fal-ai/client";
 
+// Configure fal once if the key exists
 const FAL_CONFIGURED = (() => {
   const key = process.env.FAL_KEY;
   if (key) fal.config({ credentials: key });
@@ -14,6 +15,35 @@ export type FalImageGenParams = {
   seed?: number;
 };
 
+// ---------- Narrow response shapes (no `any`) ----------
+type Imagen4ImageItem = { url?: string };
+type Imagen4FastData = { images?: Imagen4ImageItem[] };
+type Imagen4FastResponse = { data?: Imagen4FastData };
+
+type BiRefNetImage = { url?: string };
+type BiRefNetData = { image?: BiRefNetImage };
+type BiRefNetResponse = { data?: BiRefNetData };
+
+// Small helpers to safely inspect unknowns
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function isImagen4FastResponse(v: unknown): v is Imagen4FastResponse {
+  if (!isRecord(v)) return false;
+  const d = v.data;
+  if (d !== undefined && !isRecord(d)) return false;
+  const imgs = (d as Record<string, unknown> | undefined)?.images;
+  if (imgs === undefined) return true;
+  return Array.isArray(imgs) && imgs.every((it) => isRecord(it));
+}
+function isBiRefNetResponse(v: unknown): v is BiRefNetResponse {
+  if (!isRecord(v)) return false;
+  const d = v.data;
+  if (d !== undefined && !isRecord(d)) return false;
+  const img = (d as Record<string, unknown> | undefined)?.image;
+  return img === undefined || isRecord(img);
+}
+
 /**
  * Generate images with fal-ai/imagen4/preview/fast ($0.02/image).
  * Returns public file URLs from fal's storage.
@@ -24,7 +54,7 @@ export async function falGenerateImagen4Fast(
   if (!FAL_CONFIGURED) throw new Error("FAL_KEY is not configured");
   const { prompt, numImages, aspectRatio = "1:1", seed } = params;
 
-  const result = await fal.subscribe("fal-ai/imagen4/preview/fast", {
+  const raw = await fal.subscribe("fal-ai/imagen4/preview/fast", {
     input: {
       prompt,
       num_images: Math.max(1, Math.min(4, numImages)),
@@ -34,9 +64,14 @@ export async function falGenerateImagen4Fast(
     logs: false,
   });
 
-  const files: Array<{ url?: string }> | undefined = (result as any)?.data?.images;
-  const urls = (files ?? [])
-    .map((f) => (typeof f?.url === "string" ? f.url : null))
+  const result: unknown = raw;
+  if (!isImagen4FastResponse(result)) {
+    throw new Error("Unexpected response from fal imagen4/preview/fast");
+  }
+
+  const files = result.data?.images ?? [];
+  const urls = files
+    .map((f) => (typeof f.url === "string" ? f.url : null))
     .filter((u): u is string => Boolean(u));
 
   return urls;
@@ -56,7 +91,7 @@ export async function falRemoveBackground(imageUrl: string): Promise<string> {
   const operating_resolution =
     process.env.FAL_OPERATING_RESOLUTION || "1024x1024"; // or "2048x2048"
 
-  const result = await fal.subscribe("fal-ai/birefnet/v2", {
+  const raw = await fal.subscribe("fal-ai/birefnet/v2", {
     input: {
       image_url: imageUrl,
       model,
@@ -68,7 +103,14 @@ export async function falRemoveBackground(imageUrl: string): Promise<string> {
     logs: false,
   });
 
-  const outUrl: string | undefined = (result as any)?.data?.image?.url;
-  if (!outUrl) throw new Error("BiRefNet: no image url returned");
+  const result: unknown = raw;
+  if (!isBiRefNetResponse(result)) {
+    throw new Error("Unexpected response from fal birefnet/v2");
+  }
+
+  const outUrl = result.data?.image?.url;
+  if (typeof outUrl !== "string" || outUrl.length === 0) {
+    throw new Error("BiRefNet: no image url returned");
+  }
   return outUrl;
 }
