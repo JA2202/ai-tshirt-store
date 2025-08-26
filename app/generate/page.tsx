@@ -714,14 +714,14 @@ export default function GeneratePage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-4 sm:justify-end">
-            <a href="https://threadlabs.app" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
-              Sizing & Materials
+            <a href="https://threadlabs.app/terms-of-service/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+              Terms of Service
             </a>
-            <a href="https://threadlabs.app" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
-              Shipping & Returns
+            <a href="https://threadlabs.app/return-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+              Returns & Refunds
             </a>
-            <a href="https://threadlabs.app" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
-              Contact
+            <a href="https://threadlabs.app/content-copyright-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+              Content & Copyright Policy
             </a>
           </div>
         </div>

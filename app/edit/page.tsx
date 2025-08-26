@@ -1707,11 +1707,10 @@ export default function EditPage() {
 
               <div className="mb-3 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs text-zinc-700">
                 <Info className="h-4 w-4 text-zinc-500" aria-hidden />
-                <span className="mr-1">Estimated delivery to United Kingdom:</span>
-                <span className="font-medium">4–6 days</span>
+                <span className="mr-1">Standard Shipping Rates: £3.59</span>
                 <span className="mx-2">•</span>
-                <span>
-                  Shipping starts at <span className="font-medium">£3.59</span>
+                <span className="font-bold">
+                  Free Shipping <span className="font-bold">Over £40</span>
                 </span>
               </div>
 
@@ -1719,17 +1718,9 @@ export default function EditPage() {
                 <span>Base ({material})</span>
                 <span>{gbp.format(BASE_PRICE_MATERIAL[material])}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Colour adj. ({color})</span>
-                <span>{gbp.format(COLOR_SURCHARGE[color])}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Size adj. ({size})</span>
-                <span>{gbp.format(SIZE_SURCHARGE[size] ?? 0)}</span>
-              </div>
               <div className="my-3 h-px w-full bg-zinc-200" />
               <div className="flex items-center justify-between">
-                <span className="text-sm">Unit price</span>
+                <span className="text-sm">Per item</span>
                 <span className="font-semibold">{gbp.format(unitPrice)}</span>
               </div>
               <div className="mt-1 flex items-center justify-between">
@@ -1880,6 +1871,32 @@ export default function EditPage() {
             </div>
           </div>
         </div>
+
+      {/* Footer */}
+      <footer className="mx-auto w-full max-w-6xl px-4 py-10">
+        <div className="grid gap-4 text-sm sm:grid-cols-2">
+          <div>
+            <span className="font-semibold">Threadlab</span>
+            <p className="mt-1 text-sm">
+              Create, customize, and wear your ideas.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 sm:justify-end">
+            <a href="https://threadlabs.app/terms-of-service/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+              Terms of Service
+            </a>
+            <a href="https://threadlabs.app/return-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+              Returns & Refunds
+            </a>
+            <a href="https://threadlabs.app/content-copyright-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+              Content & Copyright Policy
+            </a>
+          </div>
+        </div>
+        <div className="mt-6 border-t pt-4 text-xs">
+          © {new Date().getFullYear()} Threadlab. All rights reserved.
+        </div>
+      </footer>
 
         {/* Mobile sticky checkout */}
         <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-white/60 lg:hidden">
