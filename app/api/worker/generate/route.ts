@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import OpenAI from "openai";
 import { put } from "@vercel/blob";
-// ADD ↓
 import { falGenerateImagen4Fast, falRemoveBackground } from "@/lib/providers/fal";
 
 export const runtime = "nodejs";
@@ -21,7 +20,6 @@ type JobHash = {
   quality: "low" | "high";
   images?: string;
   error?: string;
-  // ADD ↓ (boolean persisted as "1"|"0" to match your existing stringy style)
   transparent?: "1" | "0";
 };
 
@@ -34,7 +32,7 @@ function getHttpStatus(e: unknown): number | undefined {
   return undefined;
 }
 
-// ADD ↓ provider selection + gen helper (now returns urls + provider)
+// Provider selection + generation helper (returns urls + provider used)
 async function generateWithProvider(
   job: JobHash,
   n: number
@@ -42,13 +40,12 @@ async function generateWithProvider(
   const primary = (process.env.IMAGE_PROVIDER_PRIMARY || "openai").toLowerCase();
   const overflow = (process.env.IMAGE_OVERFLOW_PROVIDER || "").toLowerCase();
 
-  // Helper to run OpenAI (your current behavior)
   const runOpenAI = async (): Promise<string[]> => {
     const result = await openai.images.generate({
       model: "gpt-image-1",
       prompt: job.prompt,
       size: job.size,
-      quality: job.quality, // "low" | "high"
+      quality: job.quality,
       n,
     });
 
@@ -61,7 +58,6 @@ async function generateWithProvider(
     return raw;
   };
 
-  // Helper to run fal (Imagen4 fast). Aspect ratio: keep 1:1 because your UI posts 1024x1024
   const runFal = async (): Promise<string[]> => {
     const urls = await falGenerateImagen4Fast({
       prompt: job.prompt,
@@ -77,7 +73,6 @@ async function generateWithProvider(
     return { urls, provider: "fal" };
   }
 
-  // OpenAI primary; try → on rate-limit/server error and overflow=fal, fall back
   try {
     const urls = await runOpenAI();
     return { urls, provider: "openai" };
@@ -89,7 +84,7 @@ async function generateWithProvider(
       const urls = await runFal();
       return { urls, provider: "fal" };
     }
-    throw e; // preserve original behavior
+    throw e;
   }
 }
 
@@ -112,10 +107,10 @@ export async function POST(req: Request) {
 
     const n = Math.min(8, Math.max(1, parseInt(job.count || "1", 10) || 1));
 
-    // NEW: provider-aware generation with optional fallback to fal
+    // Provider-aware generation
     const { urls: raw, provider } = await generateWithProvider(job, n);
 
-    // --- Instrumentation: record which provider actually ran
+    // Instrumentation: record provider actually used
     await redis.hset(key, { provider });
 
     // Upload each image to Vercel Blob (originals first)
@@ -142,21 +137,20 @@ export async function POST(req: Request) {
       originalUrls.push(url);
     }
 
-    // NEW: optional background removal (transparent PNG) using fal-ai/birefnet/v2
-    // Only when the job flag is set OR when env forces finals-only behavior.
+    // Optional background removal via fal BiRefNet (finals only)
     const wantTransparent = job.transparent === "1";
-    const useBgRemoval =
-      wantTransparent && (process.env.IMAGE_BG_REMOVAL_PROVIDER || "").toLowerCase() === "fal-birefnet-v2";
+    const bgProvider = (process.env.IMAGE_BG_REMOVAL_PROVIDER || "").trim().toLowerCase();
+    const useBgRemoval = wantTransparent && bgProvider === "fal-birefnet-v2";
 
-    // --- Instrumentation: record the decision the worker made
-    await redis.hset(key, { bg_removal: useBgRemoval ? "fal-birefnet-v2" : "skip" });
+    // Instrumentation: record decision & env the worker saw
+    await redis.hset(key, { bg_removal: useBgRemoval ? "fal-birefnet-v2" : "skip", bg_env: bgProvider });
 
     const finalUrls: string[] = [];
     if (useBgRemoval) {
       for (let i = 0; i < originalUrls.length; i++) {
         try {
-          const cutUrl = await falRemoveBackground(originalUrls[i]); // returns fal-hosted URL
-          // Fetch, store cut-out PNG to your Blob (so you control retention/CDN)
+          // Call fal BiRefNet using the stored original
+          const cutUrl = await falRemoveBackground(originalUrls[i]);
           const r = await fetch(cutUrl);
           const ab = await r.arrayBuffer();
           const bytes = Buffer.from(ab);
