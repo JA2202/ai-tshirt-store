@@ -34,8 +34,11 @@ function getHttpStatus(e: unknown): number | undefined {
   return undefined;
 }
 
-// ADD ↓ provider selection + gen helper
-async function generateWithProvider(job: JobHash, n: number): Promise<string[]> {
+// ADD ↓ provider selection + gen helper (now returns urls + provider)
+async function generateWithProvider(
+  job: JobHash,
+  n: number
+): Promise<{ urls: string[]; provider: "openai" | "fal" }> {
   const primary = (process.env.IMAGE_PROVIDER_PRIMARY || "openai").toLowerCase();
   const overflow = (process.env.IMAGE_OVERFLOW_PROVIDER || "").toLowerCase();
 
@@ -70,19 +73,21 @@ async function generateWithProvider(job: JobHash, n: number): Promise<string[]> 
   };
 
   if (primary === "fal") {
-    // fal as primary
-    return await runFal();
+    const urls = await runFal();
+    return { urls, provider: "fal" };
   }
 
   // OpenAI primary; try → on rate-limit/server error and overflow=fal, fall back
   try {
-    return await runOpenAI();
+    const urls = await runOpenAI();
+    return { urls, provider: "openai" };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "";
     const code = getHttpStatus(e);
     const isRetryable = code === 429 || (code != null && code >= 500) || /rate\s*limit/i.test(msg);
     if (overflow === "fal" && isRetryable) {
-      return await runFal();
+      const urls = await runFal();
+      return { urls, provider: "fal" };
     }
     throw e; // preserve original behavior
   }
@@ -108,7 +113,10 @@ export async function POST(req: Request) {
     const n = Math.min(8, Math.max(1, parseInt(job.count || "1", 10) || 1));
 
     // NEW: provider-aware generation with optional fallback to fal
-    const raw = await generateWithProvider(job, n);
+    const { urls: raw, provider } = await generateWithProvider(job, n);
+
+    // --- Instrumentation: record which provider actually ran
+    await redis.hset(key, { provider });
 
     // Upload each image to Vercel Blob (originals first)
     const originalUrls: string[] = [];
@@ -139,6 +147,9 @@ export async function POST(req: Request) {
     const wantTransparent = job.transparent === "1";
     const useBgRemoval =
       wantTransparent && (process.env.IMAGE_BG_REMOVAL_PROVIDER || "").toLowerCase() === "fal-birefnet-v2";
+
+    // --- Instrumentation: record the decision the worker made
+    await redis.hset(key, { bg_removal: useBgRemoval ? "fal-birefnet-v2" : "skip" });
 
     const finalUrls: string[] = [];
     if (useBgRemoval) {
