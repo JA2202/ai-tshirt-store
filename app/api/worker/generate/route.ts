@@ -51,8 +51,7 @@ async function generateWithProvider(
       size: job.size,
       quality: job.quality,
       n,
-      // If you later want native alpha from OpenAI when requested, add:
-      // background: truthy(job.transparent) ? "transparent" : undefined,
+      // background: truthy(job.transparent) ? "transparent" : undefined, // optional later
     });
     const raw =
       result.data
@@ -134,6 +133,10 @@ export async function POST(req: Request) {
         addRandomSuffix: true,
       });
       originalUrls.push(url);
+
+      // ---- NEW: track the blob for retention cleanup
+      const path = new URL(url).pathname.slice(1);
+      await redis.zadd("blobs:generated", { score: Date.now(), member: path });
     }
 
     // Decide BG removal
@@ -169,6 +172,10 @@ export async function POST(req: Request) {
             addRandomSuffix: true,
           });
           finalUrls.push(url);
+
+          // ---- NEW: track the cutout blob as well
+          const path = new URL(url).pathname.slice(1);
+          await redis.zadd("blobs:generated", { score: Date.now(), member: path });
         } catch (e) {
           console.warn("BiRefNet failed; using original", { jobId, i, e });
           finalUrls.push(originalUrls[i]);

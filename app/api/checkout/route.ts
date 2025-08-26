@@ -1,6 +1,8 @@
 // app/api/checkout/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+// ADD ↓
+import { redis } from "@/lib/redis";
 
 export const runtime = "nodejs";
 
@@ -42,6 +44,18 @@ export async function POST(req: NextRequest) {
         ? [{ shipping_rate: useFree ? shippingRateFree : shippingRateFlat }]
         : []; // if not configured, omit and Stripe won't add shipping
 
+    // ADD ↓ Protect the image blob if provided
+    if (body.printFileUrl) {
+      try {
+        const path = new URL(body.printFileUrl).pathname.slice(1); // designs/<jobId>/...
+        if (path) {
+          await redis.sadd("blobs:protected", path);
+        }
+      } catch {
+        // ignore malformed URL; no change to checkout flow
+      }
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_creation: "always",
@@ -73,7 +87,6 @@ export async function POST(req: NextRequest) {
       consent_collection: { terms_of_service: "required" },
       custom_text: {
         terms_of_service_acceptance: {
-          // Keep it short; include your public URLs so users can click through
           message:
             `I confirm I have the rights to print this design and I agree to the Terms (incl. Content Policy)`,
         },
