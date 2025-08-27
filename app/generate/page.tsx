@@ -334,12 +334,13 @@ export default function GeneratePage() {
     setShowRefine(false);
 
     // GTM: user started a generation
-    gtmPush("generate_start", {
-      prompt_length: prompt.trim().length,       // avoids storing full text
+    gtmPush({
+      event: "generate_start",
+      prompt_length: prompt.trim().length, // avoids storing full text
       style: styleKey,
       transparent,
-      aspect: "1:1",                              // current shape; update when you add 4:5
-      variants: 3                                 // you fixed variants to 3
+      aspect: "1:1",                       // current shape; update when you add 4:5
+      variants: 3                          // fixed to 3
     });
 
     try {

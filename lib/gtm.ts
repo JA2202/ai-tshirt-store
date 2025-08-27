@@ -1,9 +1,9 @@
-// /lib/gtm.ts
-export type DataLayerPayload = Record<string, unknown>;
+export type GTMPayload = string | Record<string, unknown>;
 
-export function gtmPush(event: string, payload: DataLayerPayload = {}) {
+export function gtmPush(payload: GTMPayload): void {
   if (typeof window === "undefined") return;
-  (window as unknown as { dataLayer: unknown[] }).dataLayer =
-    (window as unknown as { dataLayer: unknown[] }).dataLayer || [];
-  (window as unknown as { dataLayer: unknown[] }).dataLayer.push({ event, ...payload });
+  const w = window as unknown as { dataLayer?: unknown[] };
+  w.dataLayer = w.dataLayer || [];
+  // allow any payload shape GA4/Tags expect
+  (w.dataLayer as unknown[]).push(payload as any);
 }

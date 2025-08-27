@@ -1132,28 +1132,13 @@ export default function EditPage() {
 
       if (j.url) {
         // ---- GTM: begin_checkout (GA4) ----
-        try {
-          (window as any).dataLayer = (window as any).dataLayer || [];
-          (window as any).dataLayer.push({ ecommerce: null });
-          (window as any).dataLayer.push({
-            event: "begin_checkout",
-            ecommerce: {
-              currency: "GBP",
-              value: Number((totalPrice ?? 0).toFixed(2)),
-              items: [
-                {
-                  item_id: "custom-tee",
-                  item_name: "Custom T-Shirt",
-                  item_variant: `${color}-${size}-${material}-${side}`,
-                  price: Number((unitPrice ?? 0).toFixed(2)),
-                  quantity: qty,
-                  affiliation: "ThreadLabs AI",
-                },
-              ],
-            },
-            checkout_url: j.url,
-          });
-        } catch {}
+        gtmPush({ ecommerce: null });
+        gtmPush({
+          event: "begin_checkout",
+          ecommerce: { /* ... */ },
+          checkout_url: j.url,
+        });
+
 
         // -------------------------------
 
