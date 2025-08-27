@@ -464,29 +464,39 @@ export default function EditPage() {
 
   /* ---------- Position init / react to size changes (no recenter on resize) ---------- */
   useEffect(() => {
-    // image
-    const px = fromNorm(posN.nx, posN.ny);
-    const p = clampPosImage(px.x, px.y, false);
+  if (!designWidthPx || !designHeightPx || !safeRect.w || !safeRect.h) return;
+
+  // Compute half extents of the rotated image (same math you already use)
+  const { halfW, halfH } = rotatedHalfExtents(designWidthPx, designHeightPx, rotationDeg);
+
+  // Allowed center-span inside safeRect
+  const minX = safeRect.x + halfW;
+  const maxX = safeRect.x + safeRect.w - halfW;
+  const minY = safeRect.y + halfH;
+  const maxY = safeRect.y + safeRect.h - halfH;
+
+  // Clamp current center
+  const clampedX = clamp(pos.x, minX, maxX);
+  const clampedY = clamp(pos.y, minY, maxY);
+
+  // Only update if anything changed (prevents loops)
+  if (clampedX !== pos.x || clampedY !== pos.y) {
+    const p = { x: clampedX, y: clampedY };
     setPos(p);
     setPosN(toNorm(p.x, p.y));
-    // text
-    const tx = fromNorm(textPosN.nx, textPosN.ny);
-    const tp = clampPosText(tx.x, tx.y, false);
-    setTextPos(tp);
-    setTextPosN(toNorm(tp.x, tp.y));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    safeRect.x,
-    safeRect.y,
-    safeRect.w,
-    safeRect.h,
-    designWidthPx,
-    designHeightPx,
-    rotationDeg,
-    textDims.w,
-    textDims.h,
-    textRotationDeg,
-  ]);
+  }
+}, [
+  // re-validate whenever position OR geometry could let it slip
+  pos.x,
+  pos.y,
+  designWidthPx,
+  designHeightPx,
+  rotationDeg,
+  safeRect.x,
+  safeRect.y,
+  safeRect.w,
+  safeRect.h,
+]);
 
   const centerDesign = () => {
     const p = clampPosImage(safeRect.x + safeRect.w / 2, safeRect.y + safeRect.h / 2, false);
