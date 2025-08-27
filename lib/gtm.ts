@@ -1,9 +1,20 @@
+// lib/gtm.ts
 export type GTMPayload = string | Record<string, unknown>;
+type DataLayer = GTMPayload[];
+
+declare global {
+  interface Window {
+    // Keep this OPTIONAL so pages can render before GTM loads
+    dataLayer?: DataLayer;
+  }
+}
 
 export function gtmPush(payload: GTMPayload): void {
   if (typeof window === "undefined") return;
-  const w = window as unknown as { dataLayer?: unknown[] };
-  w.dataLayer = w.dataLayer || [];
-  // allow any payload shape GA4/Tags expect
-  (w.dataLayer as unknown[]).push(payload as any);
+
+  if (!Array.isArray(window.dataLayer)) {
+    window.dataLayer = [];
+  }
+
+  window.dataLayer.push(payload);
 }
