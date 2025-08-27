@@ -221,6 +221,7 @@ export default function EditPage() {
 
   // pixel position (derived from normalized) + normalized position (0..1)
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [posN, setPosN] = useState({ nx: 0.5, ny: 0.5 });
 
   const [teeLoaded, setTeeLoaded] = useState(false);
@@ -254,6 +255,7 @@ export default function EditPage() {
   const [textScalePct, setTextScalePct] = useState<number>(60);
   const [textRotationDeg, setTextRotationDeg] = useState<number>(0);
   const [textPos, setTextPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [textPosN, setTextPosN] = useState<{ nx: number; ny: number }>({ nx: 0.5, ny: 0.5 });
 
   const textModeRef = useRef<GestureMode>("none");
@@ -458,6 +460,7 @@ export default function EditPage() {
     const ny = safeRect.h ? clamp((y - safeRect.y) / safeRect.h, 0, 1) : 0.5;
     return { nx, ny };
   };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fromNorm = (nx: number, ny: number) => ({
     x: safeRect.x + nx * safeRect.w,
     y: safeRect.y + ny * safeRect.h,
@@ -465,39 +468,40 @@ export default function EditPage() {
 
   /* ---------- Position init / react to size changes (no recenter on resize) ---------- */
   useEffect(() => {
-  if (!designWidthPx || !designHeightPx || !safeRect.w || !safeRect.h) return;
+    if (!designWidthPx || !designHeightPx || !safeRect.w || !safeRect.h) return;
 
-  // Compute half extents of the rotated image (same math you already use)
-  const { halfW, halfH } = rotatedHalfExtents(designWidthPx, designHeightPx, rotationDeg);
+    // Compute half extents of the rotated image (same math you already use)
+    const { halfW, halfH } = rotatedHalfExtents(designWidthPx, designHeightPx, rotationDeg);
 
-  // Allowed center-span inside safeRect
-  const minX = safeRect.x + halfW;
-  const maxX = safeRect.x + safeRect.w - halfW;
-  const minY = safeRect.y + halfH;
-  const maxY = safeRect.y + safeRect.h - halfH;
+    // Allowed center-span inside safeRect
+    const minX = safeRect.x + halfW;
+    const maxX = safeRect.x + safeRect.w - halfW;
+    const minY = safeRect.y + halfH;
+    const maxY = safeRect.y + safeRect.h;
 
-  // Clamp current center
-  const clampedX = clamp(pos.x, minX, maxX);
-  const clampedY = clamp(pos.y, minY, maxY);
+    // Clamp current center
+    const clampedX = clamp(pos.x, minX, maxX);
+    const clampedY = clamp(pos.y, minY, maxY);
 
-  // Only update if anything changed (prevents loops)
-  if (clampedX !== pos.x || clampedY !== pos.y) {
-    const p = { x: clampedX, y: clampedY };
-    setPos(p);
-    setPosN(toNorm(p.x, p.y));
-  }
-}, [
-  // re-validate whenever position OR geometry could let it slip
-  pos.x,
-  pos.y,
-  designWidthPx,
-  designHeightPx,
-  rotationDeg,
-  safeRect.x,
-  safeRect.y,
-  safeRect.w,
-  safeRect.h,
-]);
+    // Only update if anything changed (prevents loops)
+    if (clampedX !== pos.x || clampedY !== pos.y) {
+      const p = { x: clampedX, y: clampedY };
+      setPos(p);
+      setPosN(toNorm(p.x, p.y));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    // re-validate whenever position OR geometry could let it slip
+    pos.x,
+    pos.y,
+    designWidthPx,
+    designHeightPx,
+    rotationDeg,
+    safeRect.x,
+    safeRect.y,
+    safeRect.w,
+    safeRect.h,
+  ]);
 
   const centerDesign = () => {
     const p = clampPosImage(safeRect.x + safeRect.w / 2, safeRect.y + safeRect.h / 2, false);
@@ -1026,6 +1030,7 @@ export default function EditPage() {
   }
 
   /* ---------- Advanced: Save print file (URL) (unchanged) ---------- */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type SaveResp = {
     url?: string;
     pngUrl?: string;
@@ -1056,122 +1061,119 @@ export default function EditPage() {
 
   // ensure we have a print file before checkout (UPDATED to use direct upload)
   async function ensurePrintFile(): Promise<string> {
-  if (printFileUrl) return printFileUrl;
-  if (!chosenImage) throw new Error("No design image loaded.");
-  setSavingPrint(true);
+    if (printFileUrl) return printFileUrl;
+    if (!chosenImage) throw new Error("No design image loaded.");
+    setSavingPrint(true);
 
-  // Build the 3600×4800 PNG in-memory…
-  const dataUrl = await buildPrintPNG();
+    // Build the 3600×4800 PNG in-memory…
+    const dataUrl = await buildPrintPNG();
 
-  // …upload it directly to Vercel Blob, get a public URL…
-  const publicUrl = await uploadPrintPNGViaBlob(dataUrl);
+    // …upload it directly to Vercel Blob, get a public URL…
+    const publicUrl = await uploadPrintPNGViaBlob(dataUrl);
 
-  // …and tell your /api/print-file route about that URL (no big payloads).
-  const res = await fetch("/api/print-file", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: publicUrl }),
-  });
+    // …and tell your /api/print-file route about that URL (no big payloads).
+    const res = await fetch("/api/print-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: publicUrl }),
+    });
 
-  if (!res.ok) {
-    const txt = await res.text();
+    if (!res.ok) {
+      const txt = await res.text();
+      setSavingPrint(false);
+      throw new Error(txt || "Failed to create print file");
+    }
+
+    const data = (await res.json()) as {
+      url?: string;
+      pngUrl?: string;
+      publicUrl?: string;
+      file?: { url?: string };
+    };
+
+    const finalUrl = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
+    if (!finalUrl) {
+      setSavingPrint(false);
+      throw new Error("Print file created but no URL returned.");
+    }
+
+    setPrintFileUrl(finalUrl);
     setSavingPrint(false);
-    throw new Error(txt || "Failed to create print file");
+    return finalUrl;
   }
-
-  const data = (await res.json()) as {
-    url?: string;
-    pngUrl?: string;
-    publicUrl?: string;
-    file?: { url?: string };
-  };
-
-  const finalUrl = data.url ?? data.pngUrl ?? data.publicUrl ?? data.file?.url ?? null;
-  if (!finalUrl) {
-    setSavingPrint(false);
-    throw new Error("Print file created but no URL returned.");
-  }
-
-  setPrintFileUrl(finalUrl);
-  setSavingPrint(false);
-  return finalUrl;
-}
 
   /* ---------- Proceed to payment (Stripe) (unchanged except GTM push) ---------- */
   async function handleCheckout() {
-  try {
-    const url = await ensurePrintFile();
+    try {
+      const url = await ensurePrintFile();
 
-    const payload = {
-      side,
-      color,
-      size,
-      material,
-      qty,
-      unitPriceGBP: unitPrice,
-      totalPriceGBP: totalPrice,
-      printFileUrl: url,
-    };
+      const payload = {
+        side,
+        color,
+        size,
+        material,
+        qty,
+        unitPriceGBP: unitPrice,
+        totalPriceGBP: totalPrice,
+        printFileUrl: url,
+      };
 
-    const res = await fetch("/api/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      alert("Checkout failed.");
-      return;
-    }
-
-    const j = (await res.json()) as { url?: string; error?: string };
-
-    if (j.url) {
-      // ---- GTM: begin_checkout (GA4) ----
-      try {
-        // Clear previous ecommerce object (GA4 best practice on single-page flows)
-        (window as any).dataLayer = (window as any).dataLayer || [];
-        (window as any).dataLayer.push({ ecommerce: null });
-        (window as any).dataLayer.push({
-          event: "begin_checkout",
-          ecommerce: {
-            currency: "GBP",
-            value: Number((totalPrice ?? 0).toFixed(2)),
-            items: [
-              {
-                item_id: "custom-tee",
-                item_name: "Custom T-Shirt",
-                item_variant: `${color}-${size}-${material}-${side}`,
-                price: Number((unitPrice ?? 0).toFixed(2)),
-                quantity: qty,
-                affiliation: "ThreadLabs AI",
-              },
-            ],
-          },
-          // Optional debugging helpers (non-GA fields are ignored by GA4)
-          checkout_url: j.url,
-        });
-      } catch {
-        // swallow analytics errors
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        alert("Checkout failed.");
+        return;
       }
-      // -------------------------------
 
-      const isEmbedded =
-        typeof window !== "undefined" &&
-        new URLSearchParams(window.location.search).get("embed") === "1";
+      const j = (await res.json()) as { url?: string; error?: string };
 
-      if (isEmbedded) {
-        window.top?.location.assign(j.url);
+      if (j.url) {
+        // ---- GTM: begin_checkout (GA4) ----
+        try {
+          (window as any).dataLayer = (window as any).dataLayer || [];
+          (window as any).dataLayer.push({ ecommerce: null });
+          (window as any).dataLayer.push({
+            event: "begin_checkout",
+            ecommerce: {
+              currency: "GBP",
+              value: Number((totalPrice ?? 0).toFixed(2)),
+              items: [
+                {
+                  item_id: "custom-tee",
+                  item_name: "Custom T-Shirt",
+                  item_variant: `${color}-${size}-${material}-${side}`,
+                  price: Number((unitPrice ?? 0).toFixed(2)),
+                  quantity: qty,
+                  affiliation: "ThreadLabs AI",
+                },
+              ],
+            },
+            checkout_url: j.url,
+          });
+        } catch {}
+
+        // -------------------------------
+
+        const isEmbedded =
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("embed") === "1";
+
+        if (isEmbedded) {
+          window.top?.location.assign(j.url);
+        } else {
+          window.location.assign(j.url);
+        }
       } else {
-        window.location.assign(j.url);
+        alert(j.error || "Checkout failed.");
       }
-    } else {
-      alert(j.error || "Checkout failed.");
+    } catch (e) {
+      console.error(e);
+      alert(`Could not prepare print file: ${String(e)}`);
     }
-  } catch (e) {
-    console.error(e);
-    alert(`Could not prepare print file: ${String(e)}`);
   }
-}
 
   if (!chosenImage) {
     return (
@@ -1912,31 +1914,31 @@ export default function EditPage() {
           </div>
         </div>
 
-      {/* Footer */}
-      <footer className="mx-auto w-full max-w-6xl px-4 py-10">
-        <div className="grid gap-4 text-sm sm:grid-cols-2">
-          <div>
-            <span className="font-semibold">Threadlab</span>
-            <p className="mt-1 text-sm">
-              Create, customize, and wear your ideas.
-            </p>
+        {/* Footer */}
+        <footer className="mx-auto w-full max-w-6xl px-4 py-10">
+          <div className="grid gap-4 text-sm sm:grid-cols-2">
+            <div>
+              <span className="font-semibold">Threadlab</span>
+              <p className="mt-1 text-sm">
+                Create, customize, and wear your ideas.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 sm:justify-end">
+              <a href="https://threadlabs.app/terms-of-service/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+                Terms of Service
+              </a>
+              <a href="https://threadlabs.app/return-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+                Returns & Refunds
+              </a>
+              <a href="https://threadlabs.app/content-copyright-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
+                Content & Copyright Policy
+              </a>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 sm:justify-end">
-            <a href="https://threadlabs.app/terms-of-service/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
-              Terms of Service
-            </a>
-            <a href="https://threadlabs.app/return-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
-              Returns & Refunds
-            </a>
-            <a href="https://threadlabs.app/content-copyright-policy/" className="text-[#007AFF] underline" target="_blank" rel="noreferrer">
-              Content & Copyright Policy
-            </a>
+          <div className="mt-6 border-t pt-4 text-xs">
+            © {new Date().getFullYear()} Threadlab. All rights reserved.
           </div>
-        </div>
-        <div className="mt-6 border-t pt-4 text-xs">
-          © {new Date().getFullYear()} Threadlab. All rights reserved.
-        </div>
-      </footer>
+        </footer>
 
         {/* Mobile sticky checkout */}
         <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-white/60 lg:hidden">
