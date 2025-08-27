@@ -1589,7 +1589,7 @@ export default function EditPage() {
                     <button
                       key={t}
                       onClick={() => setProductType(t)}
-                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                      className={`rounded-lg px-3 py-2 text-sm transition capitalize ${
                         productType === t ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
                       }`}
                     >
@@ -1607,7 +1607,7 @@ export default function EditPage() {
                     <button
                       key={s}
                       onClick={() => setSide(s)}
-                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                      className={`rounded-lg px-3 py-2 text-sm transition capitalize ${
                         s === side ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
                       }`}
                     >
@@ -1625,7 +1625,7 @@ export default function EditPage() {
                     <button
                       key={c}
                       onClick={() => setColor(c)}
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-zinc-50 ${
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition capitalize hover:bg-zinc-50 ${
                         color === c ? "ring-2 ring-[#007AFF]" : ""
                       }`}
                       title={c}
@@ -1683,7 +1683,7 @@ export default function EditPage() {
                     <button
                       key={m}
                       onClick={() => setMaterial(m)}
-                      className={`rounded-lg px-3 py-2 text-sm transition ${
+                      className={`rounded-lg px-3 py-2 text-sm transition capitalize ${
                         material === m ? "border-2 border-[#007AFF] bg-white" : "border bg-white hover:bg-zinc-50"
                       }`}
                     >

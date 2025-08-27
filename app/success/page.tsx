@@ -39,77 +39,117 @@ export default async function SuccessPage({
   const email = session?.customer_details?.email || "";
   const total = money(session?.amount_total, session?.currency || "gbp");
 
+  const address = session?.customer_details?.address;
+  const formattedAddress = address
+    ? [address.line1, address.line2, address.city, address.postal_code, address.country]
+        .filter(Boolean)
+        .join(", ")
+    : "";
+
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-3xl px-4">
       <div className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-green-100 text-green-700">
-            ✓
+        {/* Hero / Confirmation */}
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-green-100 text-green-700 text-xl">
+              ✓
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold">Order confirmed</h1>
+              <p className="mt-1 text-sm text-zinc-600">
+                Thanks{email ? `, ${email}` : ""}! We’ve emailed your receipt.
+              </p>
+              {sessionId ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Order reference: <span className="font-mono">{sessionId}</span>
+                </p>
+              ) : null}
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Payment successful</h1>
-            <p className="text-sm text-zinc-600">
-              Thanks{email ? `, ${email}` : ""}! Your order is processing.
-            </p>
-          </div>
+          <span className="rounded-full bg-green-600/10 px-3 py-1 text-xs font-medium text-green-700">
+            Paid
+          </span>
         </div>
 
+        {/* Content grid */}
         <div className="grid gap-4 md:grid-cols-2">
+          {/* Order summary */}
           <div className="rounded-xl border bg-zinc-50 p-4">
-            <div className="mb-2 font-medium">Order summary</div>
+            <div className="mb-2 text-base font-medium">Order summary</div>
             <dl className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <dt>Side</dt>
-                <dd>{m.side || "—"}</dd>
+                <dd className="text-zinc-800">{m.side || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Colour</dt>
-                <dd>{m.color || "—"}</dd>
+                <dd className="text-zinc-800">{m.color || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Size</dt>
-                <dd>{m.size || "—"}</dd>
+                <dd className="text-zinc-800">{m.size || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Material</dt>
-                <dd>{m.material || "—"}</dd>
+                <dd className="text-zinc-800">{m.material || "—"}</dd>
               </div>
               <div className="flex justify-between">
                 <dt>Quantity</dt>
-                <dd>{m.qty || "—"}</dd>
+                <dd className="text-zinc-800">{m.qty || "—"}</dd>
               </div>
-              <div className="mt-2 h-px bg-zinc-200" />
+              {m.prompt ? (
+                <div className="flex justify-between">
+                  <dt>Design notes</dt>
+                  <dd className="text-zinc-600 italic">{m.prompt}</dd>
+                </div>
+              ) : null}
+              <div className="mt-3 h-px bg-zinc-200" />
               <div className="flex items-center justify-between">
-                <dt className="font-medium">Total</dt>
-                <dd className="font-semibold">{total}</dd>
+                <dt className="font-medium">Total paid</dt>
+                <dd className="text-lg font-semibold">{total}</dd>
               </div>
             </dl>
           </div>
 
+          {/* What happens next / Shipping recap */}
           <div className="rounded-xl border bg-zinc-50 p-4">
-            <div className="mb-2 font-medium">Assets</div>
-            {m.printFileUrl ? (
-              <a
-                className="inline-block rounded-lg border bg-white px-3 py-2 text-sm text-blue-600 underline hover:bg-zinc-50"
-                href={m.printFileUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Download print file (PNG)
-              </a>
-            ) : (
-              <p className="text-sm text-zinc-600">
-                Print file will be attached to your order.
-              </p>
-            )}
-            {m.prompt ? (
-              <p className="mt-3 text-xs text-zinc-500">
-                Prompt: <span className="italic">{m.prompt}</span>
-              </p>
+            <div className="mb-2 text-base font-medium">What happens next</div>
+            <ol className="space-y-3 text-sm">
+              <li className="flex gap-2">
+                <span className="mt-0.5 inline-block h-5 w-5 shrink-0 rounded-full bg-zinc-200 text-center text-[11px] leading-5">
+                  1
+                </span>
+                <span>We send your design to production.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-0.5 inline-block h-5 w-5 shrink-0 rounded-full bg-zinc-200 text-center text-[11px] leading-5">
+                  2
+                </span>
+                <span>Printing & quality check.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-0.5 inline-block h-5 w-5 shrink-0 rounded-full bg-zinc-200 text-center text-[11px] leading-5">
+                  3
+                </span>
+                <span>You’ll receive a tracking link when it ships.</span>
+              </li>
+            </ol>
+
+            {/* Shipping address recap (if present) */}
+            {formattedAddress ? (
+              <>
+                <div className="mt-4 h-px bg-zinc-200" />
+                <div className="mt-3">
+                  <div className="mb-1 text-sm font-medium">Shipping to</div>
+                  <p className="text-sm text-zinc-700">{formattedAddress}</p>
+                </div>
+              </>
             ) : null}
           </div>
         </div>
 
+        {/* Actions */}
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <Link href="/edit" className="text-sm text-blue-600 underline">
             Design another →
