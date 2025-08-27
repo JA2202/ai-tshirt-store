@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 
 type StyleKey =
-  | "none" |"realistic" | "cartoon" | "anime" | "fine_line"
+  | "realistic" | "cartoon" | "anime" | "fine_line"
   | "minimal" | "vintage" | "graphic_logo" | "other"
   | "chibi" | "pixar_like" | "disney_like" | "comic"
   | "cyberpunk" | "synthwave" | "pixel_art" | "graffiti"

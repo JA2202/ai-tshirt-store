@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
         allowed_countries: ["GB", "US", "CA", "AU", "IE", "FR", "DE", "ES", "IT", "NL"],
       },
       shipping_options: shippingOptions.length ? shippingOptions : undefined,
+      allow_promotion_codes: true,
 
       // Single line item (demo)
       line_items: [
