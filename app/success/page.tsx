@@ -1,6 +1,7 @@
 // app/success/page.tsx
 import Stripe from "stripe";
 import Link from "next/link";
+import Script from "next/script"; // ← GTM purchase push
 
 export const runtime = "nodejs";
 
@@ -46,8 +47,54 @@ export default async function SuccessPage({
         .join(", ")
     : "";
 
+  // --- GTM purchase payload (server-prepared, injected via <Script>) ---
+  const qtyNum = Number(m.qty || 1) || 1;
+  const valueDec = Number(((session?.amount_total ?? 0) / 100).toFixed(2));
+  const unitPriceDec = Number((valueDec / qtyNum).toFixed(2));
+  const currencyISO = (session?.currency || "gbp").toUpperCase();
+
+  // GA4 item payload: single custom tee line using your metadata
+  const purchasePayload = {
+    transaction_id: sessionId || "",
+    currency: currencyISO,
+    value: valueDec,
+    items: [
+      {
+        item_id: "custom-tee",
+        item_name: "Custom T-Shirt",
+        item_variant: `${m.color || "color"}-${m.size || "size"}-${m.material || "material"}-${m.side || "front"}`,
+        price: unitPriceDec,
+        quantity: qtyNum,
+        affiliation: "ThreadLabs AI",
+      },
+    ],
+  };
+  const purchaseJson = JSON.stringify(purchasePayload);
+
   return (
     <div className="mx-auto max-w-3xl px-4">
+      {/* GTM purchase push: runs once per session_id (guarded by sessionStorage) */}
+      {sessionId ? (
+        <Script id="gtm-purchase" strategy="afterInteractive">
+          {`
+            try {
+              window.dataLayer = window.dataLayer || [];
+              var key = 'gtm_purchase_${sessionId}';
+              if (!sessionStorage.getItem(key)) {
+                window.dataLayer.push({ ecommerce: null });
+                window.dataLayer.push({
+                  event: 'purchase',
+                  ecommerce: ${purchaseJson}
+                });
+                sessionStorage.setItem(key, '1');
+              }
+            } catch (e) {
+              // swallow analytics errors
+            }
+          `}
+        </Script>
+      ) : null}
+
       <div className="rounded-2xl border bg-white p-6 shadow-sm">
         {/* Hero / Confirmation */}
         <div className="mb-6 flex items-start justify-between gap-4">

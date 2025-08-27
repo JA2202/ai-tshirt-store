@@ -7,6 +7,7 @@ import { useDesignStore } from "@/lib/store";
 import Stepper from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { gtmPush } from "@/lib/gtm";
 import {
   Dialog,
   DialogContent,
@@ -331,6 +332,16 @@ export default function GeneratePage() {
     setChosenImage(null);
     setImages([]);
     setShowRefine(false);
+
+    // GTM: user started a generation
+    gtmPush("generate_start", {
+      prompt_length: prompt.trim().length,       // avoids storing full text
+      style: styleKey,
+      transparent,
+      aspect: "1:1",                              // current shape; update when you add 4:5
+      variants: 3                                 // you fixed variants to 3
+    });
+
     try {
       const res = await fetch("/api/generate", {
         method: "POST",

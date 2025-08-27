@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Star, Info, X } from "lucide-react";
 import { upload } from "@vercel/blob/client";
+import { gtmPush } from "@/lib/gtm";
 
 /* ---------- Pricing ---------- */
 const COLORS: Color[] = ["white", "black", "navy"];
@@ -1096,52 +1097,81 @@ export default function EditPage() {
   return finalUrl;
 }
 
-  /* ---------- Proceed to payment (Stripe) (unchanged) ---------- */
+  /* ---------- Proceed to payment (Stripe) (unchanged except GTM push) ---------- */
   async function handleCheckout() {
-    try {
-      const url = await ensurePrintFile();
+  try {
+    const url = await ensurePrintFile();
 
-      const payload = {
-        side,
-        color,
-        size,
-        material,
-        qty,
-        unitPriceGBP: unitPrice,
-        totalPriceGBP: totalPrice,
-        printFileUrl: url,
-      };
+    const payload = {
+      side,
+      color,
+      size,
+      material,
+      qty,
+      unitPriceGBP: unitPrice,
+      totalPriceGBP: totalPrice,
+      printFileUrl: url,
+    };
 
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        alert("Checkout failed.");
-        return;
-      }
-
-      const j = (await res.json()) as { url?: string; error?: string };
-
-      if (j.url) {
-        const isEmbedded =
-          typeof window !== "undefined" &&
-          new URLSearchParams(window.location.search).get("embed") === "1";
-
-        if (isEmbedded) {
-          window.top?.location.assign(j.url);
-        } else {
-          window.location.assign(j.url);
-        }
-      } else {
-        alert(j.error || "Checkout failed.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert(`Could not prepare print file: ${String(e)}`);
+    const res = await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      alert("Checkout failed.");
+      return;
     }
+
+    const j = (await res.json()) as { url?: string; error?: string };
+
+    if (j.url) {
+      // ---- GTM: begin_checkout (GA4) ----
+      try {
+        // Clear previous ecommerce object (GA4 best practice on single-page flows)
+        (window as any).dataLayer = (window as any).dataLayer || [];
+        (window as any).dataLayer.push({ ecommerce: null });
+        (window as any).dataLayer.push({
+          event: "begin_checkout",
+          ecommerce: {
+            currency: "GBP",
+            value: Number((totalPrice ?? 0).toFixed(2)),
+            items: [
+              {
+                item_id: "custom-tee",
+                item_name: "Custom T-Shirt",
+                item_variant: `${color}-${size}-${material}-${side}`,
+                price: Number((unitPrice ?? 0).toFixed(2)),
+                quantity: qty,
+                affiliation: "ThreadLabs AI",
+              },
+            ],
+          },
+          // Optional debugging helpers (non-GA fields are ignored by GA4)
+          checkout_url: j.url,
+        });
+      } catch {
+        // swallow analytics errors
+      }
+      // -------------------------------
+
+      const isEmbedded =
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("embed") === "1";
+
+      if (isEmbedded) {
+        window.top?.location.assign(j.url);
+      } else {
+        window.location.assign(j.url);
+      }
+    } else {
+      alert(j.error || "Checkout failed.");
+    }
+  } catch (e) {
+    console.error(e);
+    alert(`Could not prepare print file: ${String(e)}`);
   }
+}
 
   if (!chosenImage) {
     return (
