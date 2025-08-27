@@ -26,9 +26,9 @@ const TEE_OFFSET_Y_PX = 90;
 const TEE_OFFSET_Y_PX_MOBILE = 50;
 
 const BASE_PRICE_MATERIAL: Record<Material, number> = {
-  standard: 21.99,
-  eco: 24.99,
-  premium: 28.99,
+  standard: 23.99,
+  eco: 26.99,
+  premium: 30.99,
 };
 const COLOR_SURCHARGE: Record<Color, number> = {
   white: 0,
