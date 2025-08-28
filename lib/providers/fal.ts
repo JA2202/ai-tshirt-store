@@ -24,6 +24,11 @@ type BiRefNetImage = { url?: string };
 type BiRefNetData = { image?: BiRefNetImage };
 type BiRefNetResponse = { data?: BiRefNetData };
 
+// Gemini Edit response shapes
+type GeminiEditImageItem = { url?: string };
+type GeminiEditData = { images?: GeminiEditImageItem[] };
+type GeminiEditResponse = { data?: GeminiEditData };
+
 // Small helpers to safely inspect unknowns
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
@@ -42,6 +47,14 @@ function isBiRefNetResponse(v: unknown): v is BiRefNetResponse {
   if (d !== undefined && !isRecord(d)) return false;
   const img = (d as Record<string, unknown> | undefined)?.image;
   return img === undefined || isRecord(img);
+}
+function isGeminiEditResponse(v: unknown): v is GeminiEditResponse {
+  if (typeof v !== "object" || v === null) return false;
+  const d = (v as Record<string, unknown>).data;
+  if (d !== undefined && (typeof d !== "object" || d === null)) return false;
+  const imgs = (d as Record<string, unknown> | undefined)?.images;
+  if (imgs === undefined) return true;
+  return Array.isArray(imgs) && imgs.every((it) => typeof it === "object" && it !== null);
 }
 
 /**
@@ -113,4 +126,39 @@ export async function falRemoveBackground(imageUrl: string): Promise<string> {
     throw new Error("BiRefNet: no image url returned");
   }
   return outUrl;
+}
+
+/** Reference-image editing with fal-ai/gemini-25-flash-image/edit */
+export async function falGeminiEdit(params: {
+  imageUrl: string;
+  prompt: string;
+  numImages: number; // 1..4
+  aspectRatio?: "1:1" | "3:4" | "4:3" | "16:9" | "9:16";
+  imageStrength?: number; // optional, 0..1
+}): Promise<string[]> {
+  if (!FAL_CONFIGURED) throw new Error("FAL_KEY is not configured");
+  const { imageUrl, prompt, numImages, aspectRatio = "1:1", imageStrength } = params;
+
+  const raw = await fal.subscribe("fal-ai/gemini-25-flash-image/edit", {
+    input: {
+      image_url: imageUrl,
+      prompt,
+      num_images: Math.max(1, Math.min(4, numImages)),
+      aspect_ratio: aspectRatio,
+      ...(typeof imageStrength === "number" ? { image_strength: imageStrength } : {}),
+    },
+    logs: false,
+  });
+
+  const result: unknown = raw;
+  if (!isGeminiEditResponse(result)) {
+    throw new Error("Unexpected response from fal gemini-25-flash-image/edit");
+  }
+  const files = result.data?.images ?? [];
+  const urls = files
+    .map((f) => (typeof f.url === "string" ? f.url : null))
+    .filter((u): u is string => Boolean(u));
+
+  if (urls.length === 0) throw new Error("No images returned (fal gemini edit)");
+  return urls;
 }

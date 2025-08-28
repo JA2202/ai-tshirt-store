@@ -347,7 +347,7 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: finalPrompt, count: VARIANTS, size: "1024x1024", quality: "low", transparent_background: transparent }),
+        body: JSON.stringify({ prompt: finalPrompt, count: VARIANTS, size: "1024x1024", quality: "low", transparent_background: transparent, ref_data_url: refPreview || null }),
       });
 
       if (res.status === 202) {
@@ -423,7 +423,7 @@ export default function GeneratePage() {
       {/* Header (logo + back link) */}
       <header className="mx-auto w-full max-w-6xl px-4 py-4">
         <div className="flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2" aria-label="Threadlab home">
+            <Link href="/" className="flex items-center gap-2" aria-label="Threadlab home">
             <img
               src="/logo.png"
               alt="Threadlab"
@@ -664,6 +664,7 @@ export default function GeneratePage() {
                               size: "1024x1024",
                               quality: "low",
                               transparent_background: transparent,
+                              ref_data_url: refPreview || null
                             }),
                           });
                           const data = await res.json();

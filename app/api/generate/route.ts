@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { redis } from "@/lib/redis";
 import { qstash, WORKER_URL } from "@/lib/qstash";
+import { put } from "@vercel/blob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ type GenerateBody = {
   quality?: ImgQuality | string;
   // NEW: optional flag to request transparent background via worker (BiRefNet)
   transparent_background?: boolean;
+  // NEW: reference image passed from client as data URL
+  ref_data_url?: string | null;
 };
 
 type JobStatus = "queued" | "working" | "done" | "failed";
@@ -43,6 +46,8 @@ type JobRecord = {
   error?: string;
   // NEW: persisted as "1"/"0" so worker can read a simple flag
   transparent?: "1" | "0";
+  // NEW: reference image public URL (if provided)
+  ref_url?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -98,6 +103,22 @@ export async function POST(req: NextRequest) {
     const jobId = randomUUID();
     const key = `jobs:${jobId}`;
 
+    // OPTIONAL: upload reference image (if provided as data URL) and capture its public URL
+    let refUrl: string | undefined;
+    const refData = body?.ref_data_url;
+    if (typeof refData === "string" && refData.startsWith("data:image")) {
+      const [meta, b64] = refData.split(",", 2);
+      const mime = /data:(image\/[a-zA-Z0-9.+-]+);base64/.exec(meta)?.[1] || "image/png";
+      const ext = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+      const bytes = Buffer.from(b64 || "", "base64");
+      const { url } = await put(`refs/${jobId}.${ext}`, bytes, {
+        access: "public",
+        contentType: mime,
+        addRandomSuffix: true,
+      });
+      refUrl = url;
+    }
+
     const job: JobRecord = {
       status: "queued",
       createdAt: Date.now(),
@@ -106,6 +127,7 @@ export async function POST(req: NextRequest) {
       size: normalizedSize,
       quality: normalizedQuality,
       transparent: transparentFlag, // NEW
+      ...(refUrl ? { ref_url: refUrl } : {}),
     };
 
     await redis.hset(key, job as unknown as Record<string, string | number>);
