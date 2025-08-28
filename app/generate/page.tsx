@@ -223,6 +223,10 @@ export default function GeneratePage() {
   const [relaxedFilter, setRelaxedFilter] = useState(false); // relaxed filtering toggle
   const [refPreview, setRefPreview] = useState<string | null>(null);
 
+  // ---- reference uploader UI state (dropzone) ----
+  const refFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [refDragging, setRefDragging] = useState(false);
+
   // Styles accordion open/close (collapsed on mobile, open on desktop)
   const [stylesOpen, setStylesOpen] = useState(true);
   useEffect(() => {
@@ -451,7 +455,7 @@ export default function GeneratePage() {
       {/* Top banner — disclaimers */}
       {showBanner && (
         <div className="mx-auto mb-2 w-full max-w-6xl px-4">
-          <div className="flex items-start justify-between gap-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFF] p-3 text-xs text-zinc-700">
+          <div className="flex items-start justify-between gap-3 rounded-2xl border border-[#E5E7EB] bg-[#F8FAFF] p-3 text-xs text-zinc-700">
             <div>
               <div className="font-medium">Best on Wi-Fi.</div>
               <div className="mt-0.5">
@@ -835,23 +839,73 @@ export default function GeneratePage() {
             </label>
           </div>
 
+          {/* Reference uploader (UI-only changes) */}
           <div className="mt-4">
-            <div className="mb-2 text-sm">Upload reference (optional)</div>
-            <div className="overflow-hidden">
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(e) => onRefFile(e.target.files?.[0] ?? null)}
-                className="block w-full max-w-full"
-              />
-            </div>
-            {refPreview && (
-              <div className="mt-2">
+            <div className="mb-1 text-sm font-medium">Add a reference photo (optional)</div>
+            <p className="mb-2 text-xs text-zinc-500">
+              Use a photo to personalise your design — great for people, pets, family members, partners, or matching a specific style.
+            </p>
+
+            {/* Hidden input for file selection */}
+            <input
+              ref={refFileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => onRefFile(e.target.files?.[0] ?? null)}
+            />
+
+            {refPreview ? (
+              <div className="flex items-center gap-3">
                 <img
                   src={refPreview}
                   alt="Reference"
                   className="h-24 w-24 rounded border object-cover"
                 />
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-9"
+                    onClick={() => refFileInputRef.current?.click()}
+                  >
+                    Change
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="h-9 text-red-600 hover:text-red-700"
+                    onClick={() => {
+                      setRefPreview(null);
+                      if (refFileInputRef.current) refFileInputRef.current.value = "";
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => refFileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") refFileInputRef.current?.click();
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setRefDragging(true);
+                }}
+                onDragLeave={() => setRefDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setRefDragging(false);
+                  const f = e.dataTransfer.files?.[0] ?? null;
+                  onRefFile(f);
+                }}
+                className={`w-full rounded-xl border-2 border-dashed p-4 text-center transition
+                  ${refDragging ? "border-zinc-800 bg-zinc-50" : "border-zinc-300 hover:bg-zinc-50"} cursor-pointer`}
+              >
+                <div className="text-sm font-medium">Click to upload or drag &amp; drop</div>
+                <div className="mt-1 text-xs text-zinc-500">PNG, JPG or WebP</div>
               </div>
             )}
           </div>
