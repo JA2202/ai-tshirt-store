@@ -128,24 +128,29 @@ export async function falRemoveBackground(imageUrl: string): Promise<string> {
   return outUrl;
 }
 
-/** Reference-image editing with fal-ai/gemini-25-flash-image/edit */
+/**
+ * Reference-image editing with fal-ai/gemini-25-flash-image/edit.
+ * NOTE: FAL expects `image_urls: string[]` (plural). We request PNG outputs.
+ * We accept optional params for compatibility with callers but only pass
+ * supported fields to the API.
+ */
 export async function falGeminiEdit(params: {
   imageUrl: string;
   prompt: string;
   numImages: number; // 1..4
-  aspectRatio?: "1:1" | "3:4" | "4:3" | "16:9" | "9:16";
-  imageStrength?: number; // optional, 0..1
+  aspectRatio?: "1:1" | "3:4" | "4:3" | "16:9" | "9:16"; // accepted but NOT sent
+  imageStrength?: number; // accepted but NOT sent
 }): Promise<string[]> {
   if (!FAL_CONFIGURED) throw new Error("FAL_KEY is not configured");
-  const { imageUrl, prompt, numImages, aspectRatio = "1:1", imageStrength } = params;
+  const { imageUrl, prompt, numImages } = params;
 
   const raw = await fal.subscribe("fal-ai/gemini-25-flash-image/edit", {
     input: {
-      image_url: imageUrl,
+      image_urls: [imageUrl], // <-- correct shape
       prompt,
       num_images: Math.max(1, Math.min(4, numImages)),
-      aspect_ratio: aspectRatio,
-      ...(typeof imageStrength === "number" ? { image_strength: imageStrength } : {}),
+      output_format: "png",
+      // DO NOT send aspect_ratio or image_strength: not supported by this endpoint
     },
     logs: false,
   });
