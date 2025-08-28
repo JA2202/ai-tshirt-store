@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import OpenAI from "openai";
 import { put } from "@vercel/blob";
-import { falGenerateImagen4Fast, falRemoveBackground } from "@/lib/providers/fal";
+import { falGenerateImagen4Fast, falRemoveBackground, falGeminiEdit } from "@/lib/providers/fal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +21,7 @@ type JobHash = {
   images?: string;
   error?: string;
   transparent?: "1" | "0" | "true" | "false";
+  ref_url?: string;
 };
 
 // ---------- helpers ----------
@@ -40,9 +41,21 @@ function truthy(v: unknown): boolean {
 async function generateWithProvider(
   job: JobHash,
   n: number
-): Promise<{ urls: string[]; provider: "openai" | "fal" }> {
+): Promise<{ urls: string[]; provider: "openai" | "fal" | "fal_gemini_edit" }> {
   const primary = (process.env.IMAGE_PROVIDER_PRIMARY || "openai").toLowerCase();
   const overflow = (process.env.IMAGE_OVERFLOW_PROVIDER || "").toLowerCase();
+
+  // If a reference image is present, ALWAYS use Gemini Edit
+  if (job.ref_url) {
+    const urls = await falGeminiEdit({
+      imageUrl: job.ref_url,
+      prompt: job.prompt,
+      numImages: n,
+      aspectRatio: "1:1",
+      // imageStrength: 0.7, // optional tuning later
+    });
+    return { urls, provider: "fal_gemini_edit" };
+  }
 
   const runOpenAI = async (): Promise<string[]> => {
     const result = await openai.images.generate({
@@ -146,7 +159,7 @@ export async function POST(req: Request) {
 
     const bgProviderEnv = (process.env.IMAGE_BG_REMOVAL_PROVIDER || "").trim().toLowerCase();
     const useBgRemoval =
-      wantTransparent && provider === "fal" && bgProviderEnv === "fal-birefnet-v2";
+      wantTransparent && provider.startsWith("fal") && bgProviderEnv === "fal-birefnet-v2";
 
     // Instrumentation to see exactly what the worker saw/decided
     await redis.hset(key, {
