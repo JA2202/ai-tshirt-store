@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, createElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDesignStore } from "@/lib/store";
@@ -152,11 +152,11 @@ const SURPRISE = [
 
 /* Showcase images present in /public/showcase */
 const SHOWCASE_IMAGES = [
-  "/showcase/1.png",
-  "/showcase/2.png",
-  "/showcase/3.png",
-  "/showcase/4.png",
-  "/showcase/5.png",
+  "/showcase/1.webp",
+  "/showcase/2.webp",
+  "/showcase/3.webp",
+  "/showcase/4.webp",
+  "/showcase/5.webp",
 ];
 
 function Dots() {
@@ -168,6 +168,21 @@ function Dots() {
     </span>
   );
 }
+
+// ---- Lottie wrapper to avoid JSX intrinsic typing issues ----
+type LottieProps = React.HTMLAttributes<HTMLElement> & {
+  src?: string;
+  background?: string;
+  speed?: number | string;
+  loop?: boolean;
+  autoplay?: boolean;
+  mode?: string;
+  style?: React.CSSProperties;
+};
+const LottiePlayer = (props: LottieProps) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return createElement("lottie-player" as any, props as any);
+};
 
 // ---- Error helpers (typed, no `any`) ----
 function extractMessage(raw: unknown): string {
@@ -215,6 +230,9 @@ export default function GeneratePage() {
   // NEW: queued popup state + timer ref
   const [queuedOpen, setQueuedOpen] = useState(false);
   const queuedSinceRef = useRef<number | null>(null);
+
+  // NEW: generating popup state (only when status === "working")
+  const [generatingOpen, setGeneratingOpen] = useState(false);
 
   // Modal options
   const [styleKey, setStyleKey] = useState<StyleKey>("realistic");
@@ -319,6 +337,18 @@ export default function GeneratePage() {
       }
       // ------------------------------------------------------
 
+      // ---- NEW: show "Generating…" popup only while actually working ----
+      if (data.status === "working") {
+        if (!generatingOpen) setGeneratingOpen(true);
+      } else if (
+        data.status === "done" ||
+        data.status === "failed" ||
+        data.status === "queued"
+      ) {
+        if (generatingOpen) setGeneratingOpen(false);
+      }
+      // ------------------------------------------------------
+
       if (data.status === "done") return data.images ?? [];
       if (data.status === "failed") throw new Error(data.error || "Generation failed.");
 
@@ -336,6 +366,7 @@ export default function GeneratePage() {
     setChosenImage(null);
     setImages([]);
     setShowRefine(false);
+    setGeneratingOpen(true); // NEW: show immediately; poller will hide if queued
 
     // GTM: user started a generation
     gtmPush({
@@ -382,6 +413,7 @@ export default function GeneratePage() {
       // reset queue popup state (NEW)
       setQueuedOpen(false);
       queuedSinceRef.current = null;
+      setGeneratingOpen(false); // safety close
     }
   };
 
@@ -429,7 +461,7 @@ export default function GeneratePage() {
         <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2" aria-label="Threadlab home">
             <img
-              src="/logo.png"
+              src="/logo.webp"
               alt="Threadlab"
               className="h-7 w-auto"
               onError={(e) => {
@@ -943,6 +975,32 @@ export default function GeneratePage() {
               Hide
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* GENERATING POPUP (shown only while status === "working"; non-dismissable) */}
+      <Dialog open={generatingOpen}>
+        <DialogContent
+          className="max-w-sm text-center [&>button]:hidden"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="items-center text-center">
+            <DialogTitle className="text-center">Your design is coming to life</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center">
+            <LottiePlayer
+              src="/lotties/generating.json"
+              background="transparent"
+              speed="1"
+              style={{ width: 220, height: 220 }}
+              loop
+              autoplay
+            />
+            <p className="mt-2 text-sm text-zinc-600">
+              This usually takes <b>15–30 seconds</b>. For the smoothest experience, stay on Wi-Fi.
+            </p>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

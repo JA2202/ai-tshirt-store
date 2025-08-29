@@ -31,6 +31,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           `}
         </Script>
         {/* End Google Tag Manager */}
+
+        {/* paypal pay in 3 messaging */} 
+        <Script
+          src="https://www.paypal.com/sdk/js?client-id=BAA7Gi6toOQoR79J28WeX05OB7reEKEcKImrnWvQqOeLaw4ZN3vYPb-kcEx_dCPwlTV799KHAEzQxIabEI&currency=GBP&components=messages"
+          data-namespace="PayPalSDK"
+          strategy="afterInteractive"
+        />
+      <Script
+        defer
+        src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"
+      />
       </head>
       <body className={`${inter.className} min-h-screen overflow-x-hidden bg-zinc-50 text-zinc-900`}>
         {/* Google Tag Manager (noscript) */}

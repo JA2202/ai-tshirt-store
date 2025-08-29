@@ -1841,34 +1841,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* Advanced (accordion) */}
-            <details className="rounded-xl border bg-zinc-50 p-4">
-              <summary className="cursor-pointer select-none font-medium">
-                Advanced
-                <span className="ml-2 align-middle text-xs">
-                  {printFileUrl ? (
-                    <a
-                      href={printFileUrl}
-                      className="underline"
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      Print file saved
-                    </a>
-                  ) : (
-                    " (no print file saved)"
-                  )}
-                </span>
-              </summary>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleSavePrintFile} disabled={savingPrint}>
-                  {savingPrint ? "Saving…" : "Save print file (URL)"}
-                </Button>
-              </div>
-            </details>
-
             {/* Footer actions */}
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
               <Link href="/generate" className="text-sm underline">
@@ -1896,8 +1868,16 @@ export default function EditPage() {
                 </Button>
               </div>
             </div>
+            <div className="mt-2 text-xs text-zinc-600">
+              <div
+                data-pp-message
+                data-pp-style-layout="text"
+                data-pp-style-logo-type="inline"
+                data-pp-style-text-color="black"
+              />
+            </div>
           </div>
-        </div>
+        </div>    
 
         {/* Footer */}
         <footer className="mx-auto w-full max-w-6xl px-4 py-10">
@@ -1937,6 +1917,14 @@ export default function EditPage() {
             >
               {savingPrint ? "Preparing…" : "Proceed to payment →"}
             </Button>
+            <div className="mt-2 text-[11px] text-zinc-600">
+              <div
+              data-pp-message
+              data-pp-style-layout="text"
+              data-pp-style-logo-type="inline"
+              data-pp-style-text-color="black"
+              ></div>
+            </div>
           </div>
           <div className="h-[env(safe-area-inset-bottom)]" />
         </div>
