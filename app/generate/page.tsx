@@ -300,7 +300,7 @@ export default function GeneratePage() {
     if (transparent) parts.push("transparent background, sticker-style, no backdrop, no shadows");
     if (refPreview) parts.push("inspired by an uploaded reference image");
     if (relaxedFilter) parts.push("PG-13, non-explicit, no nudity, non-sexualized, family-friendly");
-    parts.push("high contrast, sharp, t-shirt print ready");
+    parts.push("high contrast, sharp, high-quality");
     return parts.filter(Boolean).join(", ");
   }
 
