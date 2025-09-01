@@ -24,10 +24,6 @@ type JobHash = {
   ref_url?: string;
 };
 
-// Friendly message users will see when Gemini Edit blocks content
-const USER_SAFE_BLOCK_MSG =
-  "That photo or prompt was blocked by safety filters. Try a different image and avoid violent, gory, or explicit terms.";
-
 // ---------- helpers ----------
 function getHttpStatus(e: unknown): number | undefined {
   if (typeof e === "object" && e !== null) {
@@ -51,21 +47,14 @@ async function generateWithProvider(
 
   // If a reference image is present, ALWAYS use Gemini Edit
   if (job.ref_url) {
-    try {
-      const urls = await falGeminiEdit({
-        imageUrl: job.ref_url,
-        prompt: job.prompt,
-        numImages: n,
-        aspectRatio: "1:1",
-        // imageStrength: 0.7, // optional tuning later
-      });
-      return { urls, provider: "fal_gemini_edit" };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Unprocessable Entity";
-      const code = getHttpStatus(e) ?? 422;
-      // Re-throw so POST catch can mark job failed with a friendly user message
-      throw Object.assign(new Error(msg), { status: code });
-    }
+    const urls = await falGeminiEdit({
+      imageUrl: job.ref_url,
+      prompt: job.prompt,
+      numImages: n,
+      aspectRatio: "1:1",
+      // imageStrength: 0.7, // optional tuning later
+    });
+    return { urls, provider: "fal_gemini_edit" };
   }
 
   const runOpenAI = async (): Promise<string[]> => {
@@ -214,21 +203,6 @@ export async function POST(req: Request) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Generation failed";
     const status = getHttpStatus(err);
-
-    // Safety/validation blocks from Gemini Edit (422) — user friendly + detailed log
-    if (status === 422) {
-      console.warn("worker safety/validation block", {
-        jobId,
-        detail: message,
-      });
-      await redis.hset(key, {
-        status: "failed",
-        error: USER_SAFE_BLOCK_MSG, // shown to users
-        error_detail: message,      // for your debugging in Redis
-      });
-      return NextResponse.json({ error: message }, { status: 422 });
-    }
-
     const is429 = status === 429 || /rate\s*limit|exceeded the rate limit/i.test(message);
     if (is429) {
       console.warn("worker rate limited — QStash will retry", { jobId, message });
