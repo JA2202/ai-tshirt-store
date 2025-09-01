@@ -29,10 +29,11 @@ type GeminiEditImageItem = { url?: string };
 type GeminiEditData = { images?: GeminiEditImageItem[] };
 type GeminiEditResponse = { data?: GeminiEditData };
 
-// Small helpers to safely inspect unknowns
+// ---------- Small helpers to safely inspect unknowns ----------
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
+
 function isImagen4FastResponse(v: unknown): v is Imagen4FastResponse {
   if (!isRecord(v)) return false;
   const d = v.data;
@@ -41,6 +42,7 @@ function isImagen4FastResponse(v: unknown): v is Imagen4FastResponse {
   if (imgs === undefined) return true;
   return Array.isArray(imgs) && imgs.every((it) => isRecord(it));
 }
+
 function isBiRefNetResponse(v: unknown): v is BiRefNetResponse {
   if (!isRecord(v)) return false;
   const d = v.data;
@@ -48,29 +50,49 @@ function isBiRefNetResponse(v: unknown): v is BiRefNetResponse {
   const img = (d as Record<string, unknown> | undefined)?.image;
   return img === undefined || isRecord(img);
 }
+
 function isGeminiEditResponse(v: unknown): v is GeminiEditResponse {
-  if (typeof v !== "object" || v === null) return false;
-  const d = (v as Record<string, unknown>).data;
-  if (d !== undefined && (typeof d !== "object" || d === null)) return false;
+  if (!isRecord(v)) return false;
+  const d = v.data;
+  if (d !== undefined && !isRecord(d)) return false;
   const imgs = (d as Record<string, unknown> | undefined)?.images;
   if (imgs === undefined) return true;
-  return Array.isArray(imgs) && imgs.every((it) => typeof it === "object" && it !== null);
+  return Array.isArray(imgs) && imgs.every((it) => isRecord(it));
 }
 
-/** Extract a concise error message/status from fal client errors */
-function extractFalError(err: unknown): { message: string; status?: number } {
-  const fallback = { message: "Unprocessable Entity" };
-  if (err && typeof err === "object") {
-    const e = err as Record<string, any>;
-    const status = e.status ?? e.statusCode ?? e?.response?.status;
-    const msg =
-      e?.response?.data?.error?.message ||
-      e?.response?.data?.message ||
-      e?.message ||
-      fallback.message;
-    return { message: String(msg).slice(0, 400), status };
+// Extract HTTP-ish status from unknown error objects without `any`
+function getStatusFromUnknown(err: unknown): number | undefined {
+  if (!isRecord(err)) return undefined;
+  const direct = err.status;
+  if (typeof direct === "number") return direct;
+  const resp = err.response;
+  if (isRecord(resp) && typeof resp.status === "number") return resp.status;
+  return undefined;
+}
+
+// Try to pull a message from common fal-style error shapes (no `any`)
+function getMessageFromUnknown(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+
+  if (isRecord(err)) {
+    const maybeMsg = err.message;
+    if (typeof maybeMsg === "string") return maybeMsg;
+
+    const resp = err.response;
+    if (isRecord(resp)) {
+      const data = resp.data;
+      if (isRecord(data)) {
+        const topMsg = data.message;
+        if (typeof topMsg === "string") return topMsg;
+
+        const innerErr = data.error;
+        if (isRecord(innerErr) && typeof innerErr.message === "string") {
+          return innerErr.message;
+        }
+      }
+    }
   }
-  return fallback;
+  return "";
 }
 
 /**
@@ -183,10 +205,19 @@ export async function falGeminiEdit(params: {
 
     if (urls.length === 0) throw new Error("No images returned (fal gemini edit)");
     return urls;
-  } catch (err) {
-    const { message, status } = extractFalError(err);
-    // Normalize to 422 for validation/safety issues so the worker can handle gracefully
-    const http = status && Number(status) < 500 ? Number(status) : 422;
-    throw Object.assign(new Error(message), { status: http });
+  } catch (err: unknown) {
+    const status = getStatusFromUnknown(err);
+    const msg = getMessageFromUnknown(err);
+
+    // Surface safety/content checker blocks with a clear message
+    if (status === 422 || /content checker|flagged|policy|unsafe/i.test(msg)) {
+      throw new Error(
+        msg || "The request was blocked by a safety/content checker."
+      );
+    }
+
+    // Fallback
+    if (msg) throw new Error(msg);
+    throw new Error("fal gemini edit failed");
   }
 }
