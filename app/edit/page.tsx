@@ -142,7 +142,7 @@ async function uploadPrintPNGViaBlob(dataUrl: string): Promise<string> {
   // Upload directly from the browser; your /api/blob/upload route handles the token exchange
   const result = await upload(file.name, file, {
     access: "public",
-    handleUploadUrl: "/api/blob/upload", // <-- exactly the route you just created
+    handleUploadUrl: "/api/blob/upload",
   });
 
   return result.url; // Public URL to use everywhere else
@@ -470,20 +470,16 @@ export default function EditPage() {
   useEffect(() => {
     if (!designWidthPx || !designHeightPx || !safeRect.w || !safeRect.h) return;
 
-    // Compute half extents of the rotated image (same math you already use)
     const { halfW, halfH } = rotatedHalfExtents(designWidthPx, designHeightPx, rotationDeg);
 
-    // Allowed center-span inside safeRect
     const minX = safeRect.x + halfW;
     const maxX = safeRect.x + safeRect.w - halfW;
     const minY = safeRect.y + halfH;
     const maxY = safeRect.y + safeRect.h;
 
-    // Clamp current center
     const clampedX = clamp(pos.x, minX, maxX);
     const clampedY = clamp(pos.y, minY, maxY);
 
-    // Only update if anything changed (prevents loops)
     if (clampedX !== pos.x || clampedY !== pos.y) {
       const p = { x: clampedX, y: clampedY };
       setPos(p);
@@ -491,7 +487,6 @@ export default function EditPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    // re-validate whenever position OR geometry could let it slip
     pos.x,
     pos.y,
     designWidthPx,
@@ -536,9 +531,7 @@ export default function EditPage() {
   }, [containerW, rotationDeg, imgRatio, safeRect.w, safeRect.h]);
 
   useEffect(() => {
-    // shrink image scale if rotation or size reduces capacity
     setScalePct((s) => clamp(s, 10, maxImageScalePct));
-    // position might need clamping after scale cap
     setPos((p) => {
       const np = clampPosImage(p.x, p.y, false);
       setPosN(toNorm(np.x, np.y));
@@ -548,10 +541,8 @@ export default function EditPage() {
   }, [maxImageScalePct]);
 
   const maxTextScaleAbs = useMemo(() => {
-    // based on current measured textDims (linear in scale), compute absolute max scale
     const { halfW, halfH } = rotatedHalfExtents(textDims.w, textDims.h, textRotationDeg);
     if (halfW * 2 === 0 || halfH * 2 === 0) return 300;
-    // current rotated full sizes:
     const Wrot = halfW * 2;
     const Hrot = halfH * 2;
     const fW = safeRect.w / Wrot;
@@ -685,7 +676,6 @@ export default function EditPage() {
     if (Math.abs(nearest - next) <= MAGNET) next = nearest;
     next = clamp(Math.round(next), -45, 45);
     setRotationDeg(next);
-    // rotation may reduce fit; cap scale & clamp pos
     setScalePct((s) => Math.min(s, maxImageScalePct));
     setPos((pp) => {
       const cp = clampPosImage(pp.x, pp.y, false);
@@ -891,7 +881,7 @@ export default function EditPage() {
 
   const totalPrice = useMemo(() => +(unitPrice * Math.max(1, qty)).toFixed(2), [unitPrice, qty]);
 
-  /* ---------- Download mockup JPG (unchanged) ---------- */
+  /* ---------- Download mockup JPG (FIXED OFFSETS APPLIED) ---------- */
   const downloadJPG = async () => {
     try {
       if (!containerRef.current) return;
@@ -907,6 +897,7 @@ export default function EditPage() {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W, H);
 
+      // ---- tee image drawn exactly like the DOM <img> (scale + offsets) ----
       const tee = new Image();
       tee.crossOrigin = "anonymous";
       tee.src = teeSrc;
@@ -916,9 +907,13 @@ export default function EditPage() {
       });
       const teeW = W * TEE_VISIBLE_SCALE;
       const teeH = teeW * (teeRatio || 1);
-      const teeX = (W - teeW) / 2;
-      const teeY = (H - teeH) / 2;
+      // Center, then apply the same pixel offsets used in CSS (desktop/mobile)
+      const teeCenterX = W / 2 + TEE_OFFSET_X_PX;
+      const teeCenterY = H / 2 + (isMobile ? TEE_OFFSET_Y_PX_MOBILE : TEE_OFFSET_Y_PX);
+      const teeX = teeCenterX - teeW / 2;
+      const teeY = teeCenterY - teeH / 2;
       if (tee.complete) ctx.drawImage(tee, teeX, teeY, teeW, teeH);
+      // --------------------------------------------------------------------
 
       const art = new Image();
       art.crossOrigin = "anonymous";
@@ -1047,8 +1042,8 @@ export default function EditPage() {
       }
       setSavingPrint(true);
 
-      const dataUrl = await buildPrintPNG();            // same 3600×4800 PNG
-      const publicUrl = await uploadPrintPNGViaBlob(dataUrl); // NEW: direct upload
+      const dataUrl = await buildPrintPNG();
+      const publicUrl = await uploadPrintPNGViaBlob(dataUrl);
 
       setPrintFileUrl(publicUrl);
       setSavingPrint(false);
@@ -1065,13 +1060,9 @@ export default function EditPage() {
     if (!chosenImage) throw new Error("No design image loaded.");
     setSavingPrint(true);
 
-    // Build the 3600×4800 PNG in-memory…
     const dataUrl = await buildPrintPNG();
-
-    // …upload it directly to Vercel Blob, get a public URL…
     const publicUrl = await uploadPrintPNGViaBlob(dataUrl);
 
-    // …and tell your /api/print-file route about that URL (no big payloads).
     const res = await fetch("/api/print-file", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1131,16 +1122,12 @@ export default function EditPage() {
       const j = (await res.json()) as { url?: string; error?: string };
 
       if (j.url) {
-        // ---- GTM: begin_checkout (GA4) ----
         gtmPush({ ecommerce: null });
         gtmPush({
           event: "begin_checkout",
           ecommerce: { /* ... */ },
           checkout_url: j.url,
         });
-
-
-        // -------------------------------
 
         const isEmbedded =
           typeof window !== "undefined" &&
@@ -1334,10 +1321,8 @@ export default function EditPage() {
                     {text}
                   </div>
 
-                  {/* selection ring */}
                   <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-zinc-400/50" />
 
-                  {/* handles (only show when focused) */}
                   {textHasFocus && (
                     <>
                       {[
@@ -1396,7 +1381,7 @@ export default function EditPage() {
                     Redo
                   </Button>
                   <Button variant="outline" onClick={downloadJPG}>
-                    Mockup JPG
+                    Share Design
                   </Button>
                 </div>
               </div>
@@ -1877,7 +1862,7 @@ export default function EditPage() {
               />
             </div>
           </div>
-        </div>    
+        </div>
 
         {/* Footer */}
         <footer className="mx-auto w-full max-w-6xl px-4 py-10">
@@ -1919,10 +1904,10 @@ export default function EditPage() {
             </Button>
             <div className="mt-2 text-[11px] text-zinc-600">
               <div
-              data-pp-message
-              data-pp-style-layout="text"
-              data-pp-style-logo-type="inline"
-              data-pp-style-text-color="black"
+                data-pp-message
+                data-pp-style-layout="text"
+                data-pp-style-logo-type="inline"
+                data-pp-style-text-color="black"
               ></div>
             </div>
           </div>
