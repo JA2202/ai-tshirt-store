@@ -128,26 +128,68 @@ const SURPRISE = [
   "owl reading at midnight",
   "bicycle with flower basket",
   "tea dragon in cup",
-  "glitch smiley face",
-  "retro map with pin",
-  "wind-up robot heart",
-  "pirate rubber duck",
-  "comfy croissant with beret",
-  "cassette tangled into heart",
-  "koala hanging from wifi signal",
-  "sunrise over desert dunes",
-  "jelly donut lifting weights",
-  "chill bear with beanie",
-  "camping under aurora",
-  "keyboard key 'ESC' running",
-  "minimal lightning inside circle",
-  "lotus flower geometric lines",
-  "happy skeleton skating",
-  "bonsai tree on wave",
-  "tiny dragon curled around pencil",
-  "gameboy style cat screen",
-  "astronaut planting smiley flag",
-  "bubble tea comet tail",
+
+  // --- Added pet & couple prompts ---
+  "Turn my pet into a prison mugshot, striped outfit, holding a sign that says 'snack thief'",
+  "My pet as a barista pouring latte art of themselves, top-down cup view",
+  "Samurai pet in tiny armor, heroic pose, cherry blossoms falling",
+  "My pet as a chef tossing pizza dough, flour poofs in the air",
+  "Detective pet with magnifying glass, clue board in the background",
+  "Superhero pet mid-flight with a cape and comic action burst",
+  "Astronaut pet floating with a space snack, tiny planet nearby",
+  "Pirate pet captain with a treasure map and tiny parrot sidekick",
+  "Royal portrait of my pet in a velvet coat and ruff collar",
+  "My pet as a baseball trading card, stats and team badge",
+  "Skater pet doing a kickflip, sticker-style deck graphics",
+  "DJ pet on turntables, vinyl spinning, party lights",
+  "My pet in a vintage travel poster, 'Visit the Couch-istan'",
+  "My pet as a sushi chef making a fish-shaped roll",
+  "Pet wearing a graduation cap, diploma ribbon in paw",
+  "Cowboy pet with tiny hat and lasso, sunset backdrop",
+  "My pet as a wizard casting sparkly spells from a spellbook",
+  "Pet as a knight riding a toy horse, banner waving",
+  "Retro 8-bit pixel sprite of my pet with idle animation vibe",
+  "Pet as a cozy librarian with glasses and stack of books",
+  "Action movie poster: my pet leaping from an explosion (cute version)",
+  "My pet as a gardener with watering can and sunhat",
+  "Pet in a bubble bath with rubber duck army",
+  "Pet in a ramen bowl hot tub, steam lines and happy face",
+  "My pet as a race car driver, helmet and checkered flag",
+  "Hiking pet with backpack and trail marker badge",
+  "My pet as a graffiti tag character, paint drips and halo",
+  "Pet as a museum marble statue on a plinth",
+  "My pet as a dragon tamer with tiny dragon perched on head",
+  "Pet as a medieval bard with lute and musical notes",
+  "Surfing pet riding a stylized wave, splashy outline",
+  "My pet as a detective noir silhouette under a street lamp",
+  "Pet as a baker with a tower of cupcakes and frosting swirl",
+  "My pet as a plush toy blueprint with stitch lines",
+  "Pet as a postal worker delivering love letters",
+  "My pet as a firefighter with toy hose and badge",
+  "Yoga pet doing downward dog (obviously), calm aura",
+  "My pet as a graffiti sticker sheet, multiple poses",
+  "Pet astronaut paw print logo badge (mission patch)",
+  "My pet as a cafe logo mascot, circular stamp style",
+  "Turn us into an arcade character select: Player 1 & Player 2 panels",
+  "Retro movie poster: 'The Adventures of Us' starring our names",
+  "Polaroid photo booth strip of us: four mini frames, cute expressions",
+  "Minimal line-art of us holding hands, heart contour background",
+  "Us as astronauts doing a space high-five, planet rings behind",
+  "Wedding invite-style crest with our initials and floral frame",
+  "Comic book cover of us as heroes, bold title and issue number",
+  "Cozy cafe illustration: us sharing one giant milkshake, two straws",
+  "Neon synthwave silhouette of us under a grid sunset",
+  "Diner menu special: 'The Couple Combo' cartoon plaque",
+  "Us as a vintage postage stamp pair, cancel mark across",
+  "Pixel art duo: idle animation vibes with small heart pickup",
+  "Magazine cover parody: 'Couple of the Year', playful headlines",
+  "Trading card pair: 'Player One' and 'Player Two' stats blocks",
+  "Minimal travel poster: us on a scooter, breeze lines, city badge",
+  "Us as latte art in two cups, top-down, clinking hearts",
+  "Band poster: our duo name in bold, tour dates as easter eggs",
+  "Superhero partners back-to-back, lightning background",
+  "Cozy studio portrait of us with warm film grain",
+  "Sticker sheet of 'us' in 6 mini poses, peel-and-stick vibe",
 ];
 
 /* Showcase images present in /public/showcase */
@@ -544,7 +586,7 @@ export default function GeneratePage() {
               <Input
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe your design… (e.g. retro wave sunset with palm trees)"
+                placeholder="Example: turn my pet into a prison mugshot with a sign saying 'snack theft'"
                 className="h-12 w-full rounded-xl text-base"
               />
 
@@ -571,7 +613,7 @@ export default function GeneratePage() {
                         Generating <Dots />
                       </span>
                     ) : (
-                      "Generate"
+                      "Generate with AI"
                     )}
                   </Button>
                   <div className="flex gap-2">
@@ -587,7 +629,7 @@ export default function GeneratePage() {
                       className="h-12 w-1/2 rounded-xl"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      Upload your design
+                      Skip AI Generation
                     </Button>
                   </div>
                 </div>
@@ -604,7 +646,7 @@ export default function GeneratePage() {
                         Generating <Dots />
                       </span>
                     ) : (
-                      "Generate"
+                      "Generate with AI"
                     )}
                   </Button>
                   <Button variant="outline" onClick={onSurprise} className="h-12 rounded-xl">
@@ -615,7 +657,7 @@ export default function GeneratePage() {
                     className="h-12 rounded-xl"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    Upload your design
+                    Skip AI — upload finished design
                   </Button>
                 </div>
               </div>
