@@ -57,6 +57,22 @@ function isGeminiEditResponse(v: unknown): v is GeminiEditResponse {
   return Array.isArray(imgs) && imgs.every((it) => typeof it === "object" && it !== null);
 }
 
+/** Extract a concise error message/status from fal client errors */
+function extractFalError(err: unknown): { message: string; status?: number } {
+  const fallback = { message: "Unprocessable Entity" };
+  if (err && typeof err === "object") {
+    const e = err as Record<string, any>;
+    const status = e.status ?? e.statusCode ?? e?.response?.status;
+    const msg =
+      e?.response?.data?.error?.message ||
+      e?.response?.data?.message ||
+      e?.message ||
+      fallback.message;
+    return { message: String(msg).slice(0, 400), status };
+  }
+  return fallback;
+}
+
 /**
  * Generate images with fal-ai/imagen4/preview/fast ($0.02/image).
  * Returns public file URLs from fal's storage.
@@ -144,26 +160,33 @@ export async function falGeminiEdit(params: {
   if (!FAL_CONFIGURED) throw new Error("FAL_KEY is not configured");
   const { imageUrl, prompt, numImages } = params;
 
-  const raw = await fal.subscribe("fal-ai/gemini-25-flash-image/edit", {
-    input: {
-      image_urls: [imageUrl], // <-- correct shape
-      prompt,
-      num_images: Math.max(1, Math.min(4, numImages)),
-      output_format: "png",
-      // DO NOT send aspect_ratio or image_strength: not supported by this endpoint
-    },
-    logs: false,
-  });
+  try {
+    const raw = await fal.subscribe("fal-ai/gemini-25-flash-image/edit", {
+      input: {
+        image_urls: [imageUrl], // <-- correct shape
+        prompt,
+        num_images: Math.max(1, Math.min(4, numImages)),
+        output_format: "png",
+        // DO NOT send aspect_ratio or image_strength: not supported by this endpoint
+      },
+      logs: false,
+    });
 
-  const result: unknown = raw;
-  if (!isGeminiEditResponse(result)) {
-    throw new Error("Unexpected response from fal gemini-25-flash-image/edit");
+    const result: unknown = raw;
+    if (!isGeminiEditResponse(result)) {
+      throw new Error("Unexpected response from fal gemini-25-flash-image/edit");
+    }
+    const files = result.data?.images ?? [];
+    const urls = files
+      .map((f) => (typeof f.url === "string" ? f.url : null))
+      .filter((u): u is string => Boolean(u));
+
+    if (urls.length === 0) throw new Error("No images returned (fal gemini edit)");
+    return urls;
+  } catch (err) {
+    const { message, status } = extractFalError(err);
+    // Normalize to 422 for validation/safety issues so the worker can handle gracefully
+    const http = status && Number(status) < 500 ? Number(status) : 422;
+    throw Object.assign(new Error(message), { status: http });
   }
-  const files = result.data?.images ?? [];
-  const urls = files
-    .map((f) => (typeof f.url === "string" ? f.url : null))
-    .filter((u): u is string => Boolean(u));
-
-  if (urls.length === 0) throw new Error("No images returned (fal gemini edit)");
-  return urls;
 }
