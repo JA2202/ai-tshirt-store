@@ -15,7 +15,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import Script from "next/script";
 
 type StyleKey =
   | "realistic" | "cartoon" | "anime" | "fine_line"
@@ -382,38 +381,62 @@ export default function GeneratePage() {
   const tsWidgetIdRef = useRef<string | null>(null);
   const tsResolverRef = useRef<((token: string) => void) | null>(null);
 
+  // NEW: ensure the Turnstile script exists (self-contained; no layout change)
+  const ensureTurnstileScript = async (): Promise<void> => {
+    if (typeof window === "undefined") return;
+    const SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    const ID = "cf-turnstile-api";
+    if (document.getElementById(ID)) return; // already present
+    await new Promise<void>((resolve) => {
+      const s = document.createElement("script");
+      s.id = ID;
+      s.src = SRC;
+      s.async = true;
+      s.defer = true;
+      s.onload = () => resolve();
+      s.onerror = () => resolve(); // resolve anyway; we'll poll for window.turnstile below
+      document.head.appendChild(s);
+    });
+  };
+
   // Render a single invisible widget once the script is ready
   useEffect(() => {
-    if (!siteKey) return; // no site key -> skip (server may have gate off)
-    if (typeof window === "undefined") return;
-    if (!window.turnstile) return;
-    if (!tsContainerRef.current) return;
-    if (tsWidgetIdRef.current) return;
+    (async () => {
+      if (!siteKey) return;
+      if (typeof window === "undefined") return;
+      await ensureTurnstileScript();
+      if (!window.turnstile) return;
+      if (!tsContainerRef.current) return;
+      if (tsWidgetIdRef.current) return;
 
-    tsWidgetIdRef.current = window.turnstile.render(tsContainerRef.current, {
-      sitekey: siteKey,
-      size: "invisible",
-      appearance: "execute",
-      callback: (token: string) => {
-        const resolve = tsResolverRef.current;
-        tsResolverRef.current = null;
-        if (resolve) resolve(token);
-      },
-      "error-callback": () => {
-        const resolve = tsResolverRef.current;
-        tsResolverRef.current = null;
-        if (resolve) resolve(""); // fail-open on client; server still enforces
-      },
-      "expired-callback": () => {
-        // no-op; next execute will mint a new token
-      },
-    });
+      tsWidgetIdRef.current = window.turnstile.render(tsContainerRef.current, {
+        sitekey: siteKey,
+        size: "invisible",
+        appearance: "execute",
+        callback: (token: string) => {
+          const resolve = tsResolverRef.current;
+          tsResolverRef.current = null;
+          if (resolve) resolve(token);
+        },
+        "error-callback": () => {
+          const resolve = tsResolverRef.current;
+          tsResolverRef.current = null;
+          if (resolve) resolve(""); // fail-open on client; server still enforces
+        },
+        "expired-callback": () => {
+          // no-op; next execute will mint a new token
+        },
+      });
+    })();
   }, [siteKey]);
 
   async function getHumanToken(): Promise<string | null> {
     if (!siteKey || typeof window === "undefined") return null;
 
-    // Wait briefly for the Turnstile script if it isn't ready yet
+    // Load script if missing
+    await ensureTurnstileScript();
+
+    // Wait briefly for the Turnstile object
     const waitForScript = () =>
       new Promise<void>((resolve) => {
         if (window.turnstile) return resolve();
@@ -619,12 +642,6 @@ export default function GeneratePage() {
 
   return (
     <div className="text-[#222222]">
-      {/* Turnstile script (explicit render) */}
-      <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
-        strategy="afterInteractive"
-      />
-
       {/* Invisible Turnstile mount (kept hidden) */}
       <div ref={tsContainerRef} style={{ display: "none" }} />
 
