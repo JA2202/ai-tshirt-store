@@ -1233,8 +1233,8 @@ export default function GeneratePage() {
           <div className="flex flex-col items-center">
             <img
               src="/icons/error.webp"
-              alt=""
-              className="mb-3 h-16 w-16 rounded-full"
+              alt="error"
+              className="mb-3 h-16 w-16"
               onError={(e) => (e.currentTarget.style.display = "none")}
             />
             <DialogHeader className="items-center text-center">
