@@ -471,7 +471,8 @@ export default function GeneratePage() {
 
   const VARIANTS = 3; // fixed
 
-  const reallyGenerate = async (humanToken?: string) => {
+  // FIX: no parameter; the function fetches the token itself
+  const reallyGenerate = async () => {
     const finalPrompt = buildFinalPrompt(prompt);
     setOpenModal(false);
     setLoading(true);
@@ -491,6 +492,8 @@ export default function GeneratePage() {
     });
 
     try {
+      const humanToken = await getHumanToken(); // get token here
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -501,7 +504,7 @@ export default function GeneratePage() {
           quality: "low",
           transparent_background: transparent,
           ref_data_url: refPreview || null,
-          turnstile_token: humanToken || undefined, // NEW
+          turnstile_token: humanToken || undefined, // pass token
         }),
       });
 
@@ -1077,8 +1080,8 @@ export default function GeneratePage() {
             </Button>
             <Button
               onClick={async () => {
-                const token = await getHumanToken();
-                void reallyGenerate(token || undefined);
+                // FIX: reallyGenerate no longer takes an argument
+                void reallyGenerate();
               }}
               className="w-full whitespace-normal break-words bg-[#FF375F] text-white hover:bg-[#e03256] sm:w-auto"
             >
