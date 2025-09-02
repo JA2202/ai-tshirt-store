@@ -53,6 +53,12 @@ type JobRecord = {
   error?: string;
   transparent?: "1" | "0";
   ref_url?: string;
+
+  // ---- DEBUG-only fields (for visibility in Redis) ----
+  human_gate?: "ok" | "skipped";
+  trust_id?: string;
+  ts_ip?: string;
+  ts_token_hint?: string;
 };
 
 type TurnstileVerify = {
@@ -153,6 +159,10 @@ export async function POST(req: NextRequest) {
     const trustId = await ensureTrustCookie(); // <-- CHANGED (added await + helper)
     const userKey = trustId || ip || "anon";
 
+    // ---- DEBUG vars for Redis visibility ----
+    let humanGateState: "ok" | "skipped" = "skipped";
+    let tokenHint: string | undefined;
+
     // --- Human gate (low-friction Turnstile) ---
     if (HUMAN_GATE_ENABLED) {
       const token =
@@ -175,6 +185,10 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+
+      // record a short non-sensitive hint (first 10 chars + length)
+      tokenHint = `${token.slice(0, 10)}…(${token.length})`;
+      humanGateState = "ok";
     }
 
     // --- Sliding window IP rate-limit (cheap path) ---
@@ -260,6 +274,12 @@ export async function POST(req: NextRequest) {
       quality: normalizedQuality,
       transparent: transparentFlag,
       ...(refUrl ? { ref_url: refUrl } : {}),
+
+      // --- DEBUG fields you can see in Upstash ---
+      human_gate: HUMAN_GATE_ENABLED ? humanGateState : "skipped",
+      trust_id: trustId || undefined,
+      ts_ip: ip,
+      ts_token_hint: tokenHint,
     };
 
     await redis.hset(key, job as unknown as Record<string, string | number>);
