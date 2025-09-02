@@ -265,25 +265,41 @@ function extractMessage(raw: unknown): string {
   return "";
 }
 
-// Helper: derive friendly error message
+// Helper: derive friendly, user-facing error message (provider/system errors -> generic)
 function friendlyError(status: number | null, raw: unknown): string {
   const text = extractMessage(raw);
-  if (/content|safety|policy|unsafe|inappropriate/i.test(text)) {
-    return "Inappropriate or unsafe prompt. Try rewording in a family-friendly way.";
-  }
-  if (status === 429 || /rate limit/i.test(text)) {
+  const lower = text.toLowerCase();
+
+  // Rate limits (window) vs daily cap
+  if (status === 429) {
+    if (/daily limit|daily/i.test(lower)) {
+      return "You’ve reached your daily limit. Please try again tomorrow.";
+    }
     return "Too many requests right now. Please try again in a moment.";
   }
-  if (status === 402 || status === 403 || /quota|billing|credit/i.test(text)) {
-    return "Out of credits or quota. Try again later or check your plan.";
+
+  // Human verification / challenge
+  if (status === 400 && /(human|verification|turnstile|challenge)/i.test(lower)) {
+    return "Quick check failed. Please refresh and try again.";
   }
-  if (status && status >= 500) {
-    return "Temporary server issue. Please retry.";
+
+  // Safety / content policy
+  if (/content|safety|policy|unsafe|inappropriate/i.test(lower)) {
+    return "That prompt isn’t allowed. Try rewording in a family-friendly way.";
   }
+
+  // Network issues
   if (!status && !text) {
     return "Network issue. Check your connection and try again.";
   }
-  return text || "Image generation failed. Please try again.";
+
+  // Anything not user-actionable (credits, provider hiccups, unknown 4xx/5xx)
+  if (status === 402 || status === 403 || (status !== null && status >= 500) || /quota|billing|credit|provider|openai/i.test(lower)) {
+    return "Temporary issue — we’re on it. Please try again later.";
+  }
+
+  // Fallback
+  return "Temporary issue — we’re on it. Please try again later.";
 }
 
 export default function GeneratePage() {
@@ -299,6 +315,10 @@ export default function GeneratePage() {
 
   // NEW: generating popup state (only when status === "working")
   const [generatingOpen, setGeneratingOpen] = useState(false);
+
+  // NEW: user-friendly error dialog state
+  const [errorOpen, setErrorOpen] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   // Modal options
   const [styleKey, setStyleKey] = useState<StyleKey>("realistic");
@@ -597,8 +617,9 @@ export default function GeneratePage() {
       throw new Error(msg);
     } catch (e: unknown) {
       console.error(e);
-      const msg = e instanceof Error ? e.message : "Image generation failed. Please try again.";
-      alert(msg);
+      const msg = e instanceof Error ? e.message : "Temporary issue — we’re on it. Please try again later.";
+      setErrorMsg(msg);
+      setErrorOpen(true);
     } finally {
       setLoading(false);
       // reset queue popup state (NEW)
@@ -618,7 +639,8 @@ export default function GeneratePage() {
     if (!file) return;
     const ok = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
     if (!ok.includes(file.type)) {
-      alert("Please upload a PNG, JPG, WebP, or SVG.");
+      setErrorMsg("Please upload a PNG, JPG, WebP, or SVG.");
+      setErrorOpen(true);
       return;
     }
     const reader = new FileReader();
@@ -635,7 +657,8 @@ export default function GeneratePage() {
     if (!file) return setRefPreview(null);
     const okTypes = ["image/png", "image/jpeg", "image/webp"];
     if (!okTypes.includes(file.type)) {
-      alert("Please upload a PNG, JPG, or WebP.");
+      setErrorMsg("Please upload a PNG, JPG, or WebP.");
+      setErrorOpen(true);
       return;
     }
     const reader = new FileReader();
@@ -907,7 +930,8 @@ export default function GeneratePage() {
                           setImages(data.images || []);
                         } catch (e: unknown) {
                           console.error(e);
-                          alert(friendlyError(null, e));
+                          setErrorMsg(friendlyError(null, e));
+                          setErrorOpen(true);
                         } finally {
                           setLoading(false);
                         }
@@ -1200,6 +1224,21 @@ export default function GeneratePage() {
               This usually takes <b>15–30 seconds</b>. For the smoothest experience, stay on Wi-Fi.
             </p>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ERROR POPUP (nice UX for user-facing errors) */}
+      <Dialog open={errorOpen} onOpenChange={setErrorOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Heads up</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">{errorMsg}</p>
+          <DialogFooter className="mt-3">
+            <Button onClick={() => setErrorOpen(false)} className="w-full sm:w-auto">
+              OK
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
