@@ -5,6 +5,7 @@ import { redis } from "@/lib/redis";
 import { qstash, WORKER_URL } from "@/lib/qstash";
 import { put } from "@vercel/blob";
 import { ensureTrustCookie } from "@/lib/trust-cookie"; // <-- ADDED
+import { cookies } from "next/headers"; // <-- FIX: we'll await this and only read from it
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,10 @@ const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET || "";
 const RL_WINDOW_SEC = Number(process.env.RL_WINDOW_SEC ?? 30); // sliding window
 const RL_MAX = Number(process.env.RL_MAX ?? 3); // max requests per IP per window
 const DAILY_GEN_CAP = Number(process.env.DAILY_GEN_CAP ?? 5); // max jobs per user per day
+
+// ----- Trusted-human cookie (bypass Turnstile after first pass) -----
+const TRUST_FLAG_COOKIE = "tl_trust";
+const TRUST_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 // ---------- Types ----------
 type GenerateBody = {
@@ -156,15 +161,21 @@ export async function POST(req: NextRequest) {
 
     // Identify caller for rate-limits (trust cookie if present; fallback to IP)
     const ip = getClientIp(req);
-    const trustId = await ensureTrustCookie(); // <-- CHANGED (added await + helper)
+    const trustId = await ensureTrustCookie(); // <-- keep
     const userKey = trustId || ip || "anon";
 
     // ---- DEBUG vars for Redis visibility ----
     let humanGateState: "ok" | "skipped" = "skipped";
     let tokenHint: string | undefined;
 
+    // We may need to set the trust cookie on the response later
+    let setTrustCookie = false;
+
     // --- Human gate (low-friction Turnstile) ---
-    if (HUMAN_GATE_ENABLED) {
+    const cookieStore = await cookies(); // <-- FIX: await and read-only
+    const alreadyTrusted = cookieStore.get(TRUST_FLAG_COOKIE)?.value === "1";
+
+    if (HUMAN_GATE_ENABLED && !alreadyTrusted) {
       const token =
         body?.turnstile_token ||
         req.headers.get("x-turnstile-token") ||
@@ -186,23 +197,32 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // record a short non-sensitive hint (first 10 chars + length)
       tokenHint = `${token.slice(0, 10)}…(${token.length})`;
       humanGateState = "ok";
+      setTrustCookie = true; // we'll attach cookie on whatever response we return below
     }
 
     // --- Sliding window IP rate-limit (cheap path) ---
     const rlKey = `rl:gen:ip:${ip}`;
     const ipHits = await redis.incr(rlKey);
     if (ipHits === 1) {
-      // set window only on first hit to keep it sliding
       await redis.expire(rlKey, RL_WINDOW_SEC);
     }
     if (ipHits > RL_MAX) {
-      return NextResponse.json(
+      const res = NextResponse.json(
         { error: "Too many requests. Please slow down and try again shortly." },
         { status: 429 }
       );
+      if (setTrustCookie) {
+        res.cookies.set(TRUST_FLAG_COOKIE, "1", {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: true,
+          path: "/",
+          maxAge: TRUST_MAX_AGE,
+        });
+      }
+      return res;
     }
 
     // --- Daily cap per user ---
@@ -213,10 +233,20 @@ export async function POST(req: NextRequest) {
       await redis.expire(dayKey, secondsUntilEndOfUTCDay());
     }
     if (usedToday > DAILY_GEN_CAP) {
-      return NextResponse.json(
+      const res = NextResponse.json(
         { error: `Daily limit reached. You can generate again tomorrow.` },
         { status: 429 }
       );
+      if (setTrustCookie) {
+        res.cookies.set(TRUST_FLAG_COOKIE, "1", {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: true,
+          path: "/",
+          maxAge: TRUST_MAX_AGE,
+        });
+      }
+      return res;
     }
 
     // Clamp variants (fixed 3 as per your current implementation)
@@ -231,8 +261,6 @@ export async function POST(req: NextRequest) {
       sizeAllowed === "auto" ? "1024x1024" : (sizeAllowed as Exclude<ImgSize, "auto">);
 
     // Quality normalization:
-    // UI accepts low / medium / high but OpenAI effectively has 2 tiers.
-    // Map: high -> "high", everything else -> "low".
     const reqQuality = (body?.quality ?? "low") as string;
     const qualityAllowed = ALLOWED_QUALITIES.includes(reqQuality as ImgQuality)
       ? (reqQuality as ImgQuality)
@@ -293,7 +321,17 @@ export async function POST(req: NextRequest) {
     });
 
     // 202 Accepted: client should poll /api/jobs/:id
-    return NextResponse.json({ jobId }, { status: 202 });
+    const res = NextResponse.json({ jobId }, { status: 202 });
+    if (setTrustCookie) {
+      res.cookies.set(TRUST_FLAG_COOKIE, "1", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: true,
+        path: "/",
+        maxAge: TRUST_MAX_AGE,
+      });
+    }
+    return res;
   } catch (err) {
     console.error(err);
     const message =
