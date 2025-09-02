@@ -52,6 +52,14 @@ type JobRecord = {
 
 export async function POST(req: NextRequest) {
   try {
+    // --- Maintenance kill-switch ---
+    if (process.env.GENERATION_DISABLED === "1") {
+      return NextResponse.json(
+        { error: "Maintenance in progress. Please try again soon." },
+        { status: 503 }
+      );
+    }
+
     const body = (await req.json()) as GenerateBody;
 
     // --- Basic validation (kept from your previous route) ---
