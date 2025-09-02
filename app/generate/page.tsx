@@ -226,6 +226,30 @@ const LottiePlayer = (props: LottieProps) => {
   return createElement("lottie-player" as any, props as any);
 };
 
+// ---- Cloudflare Turnstile typings (no `any`) ----
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        el: HTMLElement,
+        options: {
+          sitekey: string;
+          size?: "invisible" | "compact" | "normal";
+          theme?: "auto" | "light" | "dark";
+          appearance?: "always" | "execute" | "interaction-only";
+          retry?: "auto" | "never";
+          "error-callback"?: () => void;
+          "expired-callback"?: () => void;
+          callback?: (token: string) => void;
+        }
+      ) => string;
+      execute: (widgetId: string) => void;
+      reset: (widgetId?: string) => void;
+      getResponse: (widgetId: string) => string;
+    };
+  }
+}
+
 // ---- Error helpers (typed, no `any`) ----
 function extractMessage(raw: unknown): string {
   if (typeof raw === "string") return raw;
@@ -351,6 +375,52 @@ export default function GeneratePage() {
     setOpenModal(true);
   };
 
+  // ---- Cloudflare Turnstile (invisible) setup ----
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+  const tsContainerRef = useRef<HTMLDivElement | null>(null);
+  const tsWidgetIdRef = useRef<string | null>(null);
+  const tsResolverRef = useRef<((token: string) => void) | null>(null);
+
+  // Render a single invisible widget once the script is ready
+  useEffect(() => {
+    if (!siteKey) return; // no site key -> skip (server may have gate off)
+    if (typeof window === "undefined") return;
+    if (!window.turnstile) return;
+    if (!tsContainerRef.current) return;
+    if (tsWidgetIdRef.current) return;
+
+    tsWidgetIdRef.current = window.turnstile.render(tsContainerRef.current, {
+      sitekey: siteKey,
+      size: "invisible",
+      appearance: "execute",
+      callback: (token: string) => {
+        const resolve = tsResolverRef.current;
+        tsResolverRef.current = null;
+        if (resolve) resolve(token);
+      },
+      "error-callback": () => {
+        const resolve = tsResolverRef.current;
+        tsResolverRef.current = null;
+        if (resolve) resolve(""); // fail-open on client; server still enforces
+      },
+      "expired-callback": () => {
+        // no-op; next execute will mint a new token
+      },
+    });
+  }, [siteKey]);
+
+  async function getHumanToken(): Promise<string | null> {
+    if (!siteKey || !window.turnstile || !tsWidgetIdRef.current) return null;
+    return new Promise<string>((resolve) => {
+      tsResolverRef.current = resolve;
+      try {
+        window.turnstile!.execute(tsWidgetIdRef.current!);
+      } catch {
+        resolve("");
+      }
+    });
+  }
+
   // ---- polling helpers + updated reallyGenerate ----
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -401,7 +471,7 @@ export default function GeneratePage() {
 
   const VARIANTS = 3; // fixed
 
-  const reallyGenerate = async () => {
+  const reallyGenerate = async (humanToken?: string) => {
     const finalPrompt = buildFinalPrompt(prompt);
     setOpenModal(false);
     setLoading(true);
@@ -424,7 +494,15 @@ export default function GeneratePage() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: finalPrompt, count: VARIANTS, size: "1024x1024", quality: "low", transparent_background: transparent, ref_data_url: refPreview || null }),
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          count: VARIANTS,
+          size: "1024x1024",
+          quality: "low",
+          transparent_background: transparent,
+          ref_data_url: refPreview || null,
+          turnstile_token: humanToken || undefined, // NEW
+        }),
       });
 
       if (res.status === 202) {
@@ -498,6 +576,9 @@ export default function GeneratePage() {
 
   return (
     <div className="text-[#222222]">
+      {/* Invisible Turnstile mount (kept hidden) */}
+      <div ref={tsContainerRef} style={{ display: "none" }} />
+
       {/* Header (logo + back link) */}
       <header className="mx-auto w-full max-w-6xl px-4 py-4">
         <div className="flex items-center justify-between">
@@ -733,6 +814,7 @@ export default function GeneratePage() {
                         setChosenImage(null);
                         setImages([]);
                         try {
+                          const token = await getHumanToken();
                           const res = await fetch("/api/generate", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -742,7 +824,8 @@ export default function GeneratePage() {
                               size: "1024x1024",
                               quality: "low",
                               transparent_background: transparent,
-                              ref_data_url: refPreview || null
+                              ref_data_url: refPreview || null,
+                              turnstile_token: token || undefined, // NEW
                             }),
                           });
                           const data = await res.json();
@@ -993,7 +1076,10 @@ export default function GeneratePage() {
               Cancel
             </Button>
             <Button
-              onClick={reallyGenerate}
+              onClick={async () => {
+                const token = await getHumanToken();
+                void reallyGenerate(token || undefined);
+              }}
               className="w-full whitespace-normal break-words bg-[#FF375F] text-white hover:bg-[#e03256] sm:w-auto"
             >
               Apply & Generate

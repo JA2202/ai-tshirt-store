@@ -38,10 +38,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           data-namespace="PayPalSDK"
           strategy="afterInteractive"
         />
-      <Script
-        defer
-        src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"
-      />
+        <Script
+          defer
+          src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"
+        />
+        {/* Cloudflare Turnstile client script (invisible) */}
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+          defer
+        />
       </head>
       <body className={`${inter.className} min-h-screen overflow-x-hidden bg-zinc-50 text-zinc-900`}>
         {/* Google Tag Manager (noscript) */}
