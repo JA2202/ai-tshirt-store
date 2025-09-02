@@ -410,7 +410,46 @@ export default function GeneratePage() {
   }, [siteKey]);
 
   async function getHumanToken(): Promise<string | null> {
-    if (!siteKey || !window.turnstile || !tsWidgetIdRef.current) return null;
+    if (!siteKey || typeof window === "undefined") return null;
+
+  // Wait briefly for the Turnstile script if it isn't ready yet
+    const waitForScript = () =>
+      new Promise<void>((resolve) => {
+        if (window.turnstile) return resolve();
+        let tries = 0;
+        const id = window.setInterval(() => {
+          if (window.turnstile || tries++ > 40) { // ~2s max
+            window.clearInterval(id);
+            resolve();
+          }
+        }, 50);
+      });
+    await waitForScript();
+
+    if (!window.turnstile) return null;
+
+    // Lazy-render the invisible widget if it wasn't rendered yet
+    if (!tsWidgetIdRef.current && tsContainerRef.current) {
+      tsWidgetIdRef.current = window.turnstile.render(tsContainerRef.current, {
+        sitekey: siteKey,
+        size: "invisible",
+        appearance: "execute",
+        callback: (token: string) => {
+          const resolve = tsResolverRef.current;
+          tsResolverRef.current = null;
+          if (resolve) resolve(token);
+        },
+        "error-callback": () => {
+          const resolve = tsResolverRef.current;
+          tsResolverRef.current = null;
+          if (resolve) resolve("");
+        },
+        "expired-callback": () => {},
+      });
+    }
+
+    if (!tsWidgetIdRef.current) return null;
+
     return new Promise<string>((resolve) => {
       tsResolverRef.current = resolve;
       try {

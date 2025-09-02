@@ -44,9 +44,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {/* Cloudflare Turnstile (needed for the human-gate) */}
         <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          id="cf-turnstile"
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
           strategy="afterInteractive"
-          defer
         />
       </head>
       <body className={`${inter.className} min-h-screen overflow-x-hidden bg-zinc-50 text-zinc-900`}>
