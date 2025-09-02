@@ -419,9 +419,12 @@ export default function GeneratePage() {
           if (resolve) resolve(token);
         },
         "error-callback": () => {
-          const resolve = tsResolverRef.current;
-          tsResolverRef.current = null;
-          if (resolve) resolve(""); // fail-open on client; server still enforces
+          // retry once instead of resolving an empty token
+          const id = tsWidgetIdRef.current!;
+          try {
+            window.turnstile?.reset(id);
+            window.turnstile?.execute(id);
+          } catch {}
         },
         "expired-callback": () => {
           // no-op; next execute will mint a new token
@@ -464,9 +467,11 @@ export default function GeneratePage() {
           if (resolve) resolve(token);
         },
         "error-callback": () => {
-          const resolve = tsResolverRef.current;
-          tsResolverRef.current = null;
-          if (resolve) resolve("");
+          const id = tsWidgetIdRef.current!;
+          try {
+            window.turnstile?.reset(id);
+            window.turnstile?.execute(id);
+          } catch {}
         },
         "expired-callback": () => {},
       });
