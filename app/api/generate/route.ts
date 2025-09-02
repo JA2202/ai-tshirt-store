@@ -5,6 +5,7 @@ import { redis } from "@/lib/redis";
 import { qstash, WORKER_URL } from "@/lib/qstash";
 import { put } from "@vercel/blob";
 import { ensureTrustCookie } from "@/lib/trust-cookie"; // <-- ADDED
+import { cookies } from "next/headers"; // <-- FIX: we'll await this and only read from it
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,15 +30,19 @@ const RL_WINDOW_SEC = Number(process.env.RL_WINDOW_SEC ?? 30); // sliding window
 const RL_MAX = Number(process.env.RL_MAX ?? 3); // max requests per IP per window
 const DAILY_GEN_CAP = Number(process.env.DAILY_GEN_CAP ?? 5); // max jobs per user per day
 
+// ----- Trusted-human cookie (bypass Turnstile after first pass) -----
+const TRUST_FLAG_COOKIE = "tl_trust";
+const TRUST_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
 // ---------- Types ----------
 type GenerateBody = {
   prompt: string;
   count?: number;
   size?: ImgSize | string;
   quality?: ImgQuality | string;
-  transparent_background?: boolean; // request transparent background via worker (BiRefNet)
-  ref_data_url?: string | null; // reference image (data URL)
-  turnstile_token?: string; // optional: turnstile token in body
+  transparent_background?: boolean;
+  ref_data_url?: string | null;
+  turnstile_token?: string;
 };
 
 type JobStatus = "queued" | "working" | "done" | "failed";
@@ -63,7 +68,6 @@ type JobRecord = {
 
 type TurnstileVerify = {
   success: boolean;
-  /** See https://developers.cloudflare.com/turnstile/reference/error-codes/ */
   "error-codes"?: string[];
   action?: string;
   cdata?: string;
@@ -71,19 +75,17 @@ type TurnstileVerify = {
 
 // ---------- Helpers ----------
 function getClientIp(req: NextRequest): string {
-  // Prefer Cloudflare / proxy headers if present
   const cf = req.headers.get("cf-connecting-ip");
   if (cf) return cf;
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0]?.trim() || "0.0.0.0";
   const xri = req.headers.get("x-real-ip");
   if (xri) return xri;
-  // Fallback (not always available in serverless)
   return "0.0.0.0";
 }
 
 function isoDateUTC(d: Date): string {
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  return d.toISOString().slice(0, 10);
 }
 
 function secondsUntilEndOfUTCDay(now = new Date()): number {
@@ -148,23 +150,29 @@ export async function POST(req: NextRequest) {
     // Parse request body once
     const body = (await req.json()) as GenerateBody;
 
-    // --- Basic validation (kept from your previous route) ---
+    // --- Basic validation ---
     const prompt = body?.prompt;
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    // Identify caller for rate-limits (trust cookie if present; fallback to IP)
+    // Identify caller for rate-limits
     const ip = getClientIp(req);
-    const trustId = await ensureTrustCookie(); // <-- CHANGED (added await + helper)
+    const trustId = await ensureTrustCookie();
     const userKey = trustId || ip || "anon";
 
     // ---- DEBUG vars for Redis visibility ----
     let humanGateState: "ok" | "skipped" = "skipped";
     let tokenHint: string | undefined;
 
+    // We may need to set the trust cookie on the response later
+    let setTrustCookie = false;
+
     // --- Human gate (low-friction Turnstile) ---
-    if (HUMAN_GATE_ENABLED) {
+    const cookieStore = await cookies(); // read-only
+    const alreadyTrusted = cookieStore.get(TRUST_FLAG_COOKIE)?.value === "1";
+
+    if (HUMAN_GATE_ENABLED && !alreadyTrusted) {
       const token =
         body?.turnstile_token ||
         req.headers.get("x-turnstile-token") ||
@@ -186,23 +194,32 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // record a short non-sensitive hint (first 10 chars + length)
       tokenHint = `${token.slice(0, 10)}…(${token.length})`;
       humanGateState = "ok";
+      setTrustCookie = true;
     }
 
-    // --- Sliding window IP rate-limit (cheap path) ---
+    // --- Sliding window IP rate-limit ---
     const rlKey = `rl:gen:ip:${ip}`;
     const ipHits = await redis.incr(rlKey);
     if (ipHits === 1) {
-      // set window only on first hit to keep it sliding
       await redis.expire(rlKey, RL_WINDOW_SEC);
     }
     if (ipHits > RL_MAX) {
-      return NextResponse.json(
+      const res = NextResponse.json(
         { error: "Too many requests. Please slow down and try again shortly." },
         { status: 429 }
       );
+      if (setTrustCookie) {
+        res.cookies.set(TRUST_FLAG_COOKIE, "1", {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: true,
+          path: "/",
+          maxAge: TRUST_MAX_AGE,
+        });
+      }
+      return res;
     }
 
     // --- Daily cap per user ---
@@ -213,16 +230,26 @@ export async function POST(req: NextRequest) {
       await redis.expire(dayKey, secondsUntilEndOfUTCDay());
     }
     if (usedToday > DAILY_GEN_CAP) {
-      return NextResponse.json(
+      const res = NextResponse.json(
         { error: `Daily limit reached. You can generate again tomorrow.` },
         { status: 429 }
       );
+      if (setTrustCookie) {
+        res.cookies.set(TRUST_FLAG_COOKIE, "1", {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: true,
+          path: "/",
+          maxAge: TRUST_MAX_AGE,
+        });
+      }
+      return res;
     }
 
     // Clamp variants (fixed 3 as per your current implementation)
     const count = 3;
 
-    // Size normalization (treat "auto" as 1024x1024 like before)
+    // Size normalization (treat "auto" as 1024x1024)
     const reqSize = (body?.size ?? "1024x1024") as string;
     const sizeAllowed = ALLOWED_SIZES.includes(reqSize as ImgSize)
       ? (reqSize as ImgSize)
@@ -231,8 +258,6 @@ export async function POST(req: NextRequest) {
       sizeAllowed === "auto" ? "1024x1024" : (sizeAllowed as Exclude<ImgSize, "auto">);
 
     // Quality normalization:
-    // UI accepts low / medium / high but OpenAI effectively has 2 tiers.
-    // Map: high -> "high", everything else -> "low".
     const reqQuality = (body?.quality ?? "low") as string;
     const qualityAllowed = ALLOWED_QUALITIES.includes(reqQuality as ImgQuality)
       ? (reqQuality as ImgQuality)
@@ -240,14 +265,14 @@ export async function POST(req: NextRequest) {
     const normalizedQuality: "low" | "high" =
       qualityAllowed === "high" ? "high" : "low";
 
-    // NEW: normalize transparent background flag
+    // Transparent flag
     const transparentFlag = body?.transparent_background === true ? "1" : "0";
 
     // --- Create and persist the job ---
     const jobId = randomUUID();
     const key = `jobs:${jobId}`;
 
-    // OPTIONAL: upload reference image (if provided as data URL) and capture its public URL
+    // Optional reference upload
     let refUrl: string | undefined;
     const refData = body?.ref_data_url;
     if (typeof refData === "string" && refData.startsWith("data:image")) {
@@ -265,15 +290,8 @@ export async function POST(req: NextRequest) {
       refUrl = url;
     }
 
-    // --- Build DEBUG fields without null/undefined values ---
-    const debugFields: Record<string, string | number> = {
-      human_gate: HUMAN_GATE_ENABLED ? humanGateState : "skipped",
-      ts_ip: ip,
-    };
-    if (trustId) debugFields.trust_id = trustId;          // only if present
-    if (tokenHint) debugFields.ts_token_hint = tokenHint; // only if present
-
-    const job: JobRecord = {
+    // --- Build the job object WITHOUT null/undefined fields in debug data ---
+    const baseJob: JobRecord = {
       status: "queued",
       createdAt: Date.now(),
       prompt,
@@ -282,13 +300,20 @@ export async function POST(req: NextRequest) {
       quality: normalizedQuality,
       transparent: transparentFlag,
       ...(refUrl ? { ref_url: refUrl } : {}),
-      ...(debugFields as Partial<JobRecord>),
+      human_gate: HUMAN_GATE_ENABLED ? humanGateState : "skipped",
+      ts_ip: ip,
     };
+
+    const debugFields: Partial<JobRecord> = {};
+    if (trustId) debugFields.trust_id = trustId;          // add only if present
+    if (tokenHint) debugFields.ts_token_hint = tokenHint; // add only if present
+
+    const job: JobRecord = { ...baseJob, ...debugFields };
 
     await redis.hset(key, job as unknown as Record<string, string | number>);
     await redis.expire(key, 60 * 60 * 24); // 24h TTL
 
-    // --- Enqueue for the worker via a QStash Queue (smooth bursts) ---
+    // --- Enqueue for the worker ---
     await qstash.publishJSON({
       url: WORKER_URL,
       body: { jobId },
@@ -296,7 +321,17 @@ export async function POST(req: NextRequest) {
     });
 
     // 202 Accepted: client should poll /api/jobs/:id
-    return NextResponse.json({ jobId }, { status: 202 });
+    const res = NextResponse.json({ jobId }, { status: 202 });
+    if (setTrustCookie) {
+      res.cookies.set(TRUST_FLAG_COOKIE, "1", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: true,
+        path: "/",
+        maxAge: TRUST_MAX_AGE,
+      });
+    }
+    return res;
   } catch (err) {
     console.error(err);
     const message =
