@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import Script from "next/script";
 
 type StyleKey =
   | "realistic" | "cartoon" | "anime" | "fine_line"
@@ -412,7 +413,7 @@ export default function GeneratePage() {
   async function getHumanToken(): Promise<string | null> {
     if (!siteKey || typeof window === "undefined") return null;
 
-  // Wait briefly for the Turnstile script if it isn't ready yet
+    // Wait briefly for the Turnstile script if it isn't ready yet
     const waitForScript = () =>
       new Promise<void>((resolve) => {
         if (window.turnstile) return resolve();
@@ -618,6 +619,12 @@ export default function GeneratePage() {
 
   return (
     <div className="text-[#222222]">
+      {/* Turnstile script (explicit render) */}
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+      />
+
       {/* Invisible Turnstile mount (kept hidden) */}
       <div ref={tsContainerRef} style={{ display: "none" }} />
 
