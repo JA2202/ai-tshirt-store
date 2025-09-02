@@ -275,12 +275,12 @@ function friendlyError(status: number | null, raw: unknown): string {
     if (/daily limit|daily/i.test(lower)) {
       return "You’ve reached your daily limit. Please try again tomorrow.";
     }
-    return "Too many requests right now. Please try again in a moment.";
+    return "You've submitted too many requests. Please try again in a moment.";
   }
 
   // Human verification / challenge
   if (status === 400 && /(human|verification|turnstile|challenge)/i.test(lower)) {
-    return "Quick check failed. Please refresh and try again.";
+    return "Human verficiation check failed. Please refresh the page and try again.";
   }
 
   // Safety / content policy
@@ -315,7 +315,7 @@ export default function GeneratePage() {
 
   // NEW: generating popup state (only when status === "working")
   const [generatingOpen, setGeneratingOpen] = useState(false);
-
+  
   // NEW: user-friendly error dialog state
   const [errorOpen, setErrorOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -1227,18 +1227,29 @@ export default function GeneratePage() {
         </DialogContent>
       </Dialog>
 
-      {/* ERROR POPUP (nice UX for user-facing errors) */}
+      {/* ERROR POPUP (crisp, centered, with icon and #FF375F button) */}
       <Dialog open={errorOpen} onOpenChange={setErrorOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Heads up</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm">{errorMsg}</p>
-          <DialogFooter className="mt-3">
-            <Button onClick={() => setErrorOpen(false)} className="w-full sm:w-auto">
-              OK
-            </Button>
-          </DialogFooter>
+        <DialogContent className="max-w-sm p-6 text-center">
+          <div className="flex flex-col items-center">
+            <img
+              src="/icons/error.webp"
+              alt=""
+              className="mb-3 h-16 w-16 rounded-full"
+              onError={(e) => (e.currentTarget.style.display = "none")}
+            />
+            <DialogHeader className="items-center text-center">
+              <DialogTitle className="text-center">Uh Ohhhh!</DialogTitle>
+            </DialogHeader>
+            <p className="mt-1 text-sm text-zinc-600">{errorMsg}</p>
+            <DialogFooter className="mt-5 flex justify-center">
+              <Button
+                onClick={() => setErrorOpen(false)}
+                className="rounded-xl bg-[#FF375F] text-white hover:bg-[#e03256]"
+              >
+                Try again
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
