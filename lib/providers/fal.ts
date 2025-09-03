@@ -138,7 +138,7 @@ export async function falRemoveBackground(imageUrl: string): Promise<string> {
 
   const model =
     process.env.FAL_BIREFNET_MODEL ||
-    "Matting"; // "Matting" | "Portrait" | "General Use (Light)" | "General Use (Heavy)"
+    "General Use (Light)"; // "Matting" | "Portrait" | "General Use (Light)" | "General Use (Heavy)"
   const operating_resolution =
     process.env.FAL_OPERATING_RESOLUTION || "1024x1024"; // or "2048x2048"
 
