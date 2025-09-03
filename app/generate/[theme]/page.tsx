@@ -6,8 +6,13 @@ export function generateStaticParams() {
   return Object.keys(THEMES).map((theme) => ({ theme }));
 }
 
-export function generateMetadata({ params }: { params: { theme: string } }) {
-  const key = (params.theme || "couples") as ThemeKey;
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ theme: string }>;
+}) {
+  const { theme: themeParam } = await params;
+  const key = (themeParam || "couples") as ThemeKey;
   const theme = THEMES[key] ?? THEMES.couples;
   return {
     title: theme.title,
@@ -15,8 +20,13 @@ export function generateMetadata({ params }: { params: { theme: string } }) {
   };
 }
 
-export default function Page({ params }: { params: { theme: string } }) {
-  const key = (params.theme || "couples") as ThemeKey;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ theme: string }>;
+}) {
+  const { theme: themeParam } = await params;
+  const key = (themeParam || "couples") as ThemeKey;
   const theme = THEMES[key] ?? THEMES.couples;
   return <ThemedGenerateClient themeKey={key} theme={theme} />;
 }
