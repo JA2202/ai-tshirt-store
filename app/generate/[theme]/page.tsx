@@ -1,5 +1,5 @@
 // app/generate/[theme]/page.tsx
-import { THEMES, ThemeKey } from "../themes";
+import { THEMES, type ThemeKey } from "../themes";
 import ThemedGenerateClient from "./ThemedGenerateClient";
 
 export function generateStaticParams() {
