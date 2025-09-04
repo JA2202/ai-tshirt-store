@@ -1,7 +1,7 @@
 // Edit page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
@@ -177,6 +177,14 @@ const TEXT_COLORS = [
 ];
 
 export default function EditPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <EditPageBody />
+    </Suspense>
+  );
+}
+
+function EditPageBody() {
   const router = useRouter();
   const {
     chosenImage,
@@ -1721,7 +1729,7 @@ export default function EditPage() {
             <div className="mb-6 rounded-xl border bg-zinc-50 p-4">
               <h2 className="mb-3 text-base font-medium">Price</h2>
 
-              <div className="mb-3 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs text-zinc-700">
+              <div className="mb-3 flex items中心 gap-2 rounded-lg border bg-white px-3 py-2 text-xs text-zinc-700">
                 <Info className="h-4 w-4 text-zinc-500" aria-hidden />
                 <span className="mr-1">Standard Shipping Rates: £3.59</span>
                 <span className="mx-2">•</span>
