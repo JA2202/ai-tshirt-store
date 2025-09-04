@@ -128,7 +128,9 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
   // styles accordion collapsed on mobile
   const [stylesOpen, setStylesOpen] = useState(true);
   useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 640) setStylesOpen(false);
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      setStylesOpen(true);
+    }
   }, []);
 
   // top banner
@@ -170,7 +172,7 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
 
   function buildFinalPrompt() {
     const parts = [finalStyle];
-    if (transparent) parts.push("transparent background, sticker-style, no backdrop, no shadows");
+    if (transparent) parts.push("plain white background, sticker-style, no backdrop, no shadows");
     if (refPreview) parts.push("inspired by an uploaded reference image");
     if (relaxedFilter) parts.push("PG-13, non-explicit, no nudity, non-sexualized, family-friendly");
     parts.push("high contrast, sharp, high-quality");
@@ -397,7 +399,7 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
       const dataUrl = String(reader.result);
       setChosenImage(dataUrl);
       setImages([]);
-      router.push("/edit");
+      router.push(`/edit?from=${themeKey}`);
     };
     reader.readAsDataURL(file);
   };
@@ -626,11 +628,11 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
               {/* Refine & Continue (unchanged functionality) */}
               <div className="mt-4 rounded-xl border bg-zinc-50 p-3 sm:p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm">Want tweaks? Add details and regenerate.</p>
+                  <p className="text-sm">Happy with your design?</p>
                   <div className="flex gap-2">
                     <Button
                       disabled={!canContinue}
-                      onClick={() => router.push("/edit")}
+                      onClick={() => router.push(`/edit?from=${themeKey}`)}
                       className="rounded-xl bg-black text-white hover:bg-zinc-900 disabled:opacity-40"
                     >
                       Continue to Editor →
@@ -882,13 +884,15 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
           <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
             <label htmlFor="transparent-bg" className="flex min-w-0 items-center gap-2">
               <input id="transparent-bg" type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} className="h-4 w-4" />
-              <span className="text-sm whitespace-normal break-words">Transparent background</span>
+              <span className="text-sm whitespace-normal break-words">
+                Remove Background <span className="block text-xs text-zinc-500">(Generates the design with no edges. Best for logos and graphic t-shirts)</span>
+              </span>
             </label>
 
             <label htmlFor="relaxed-filter" className="flex min-w-0 items-start gap-2">
               <input id="relaxed-filter" type="checkbox" checked={relaxedFilter} onChange={(e) => setRelaxedFilter(e.target.checked)} className="mt-0.5 h-4 w-4" />
               <span className="text-sm whitespace-normal break-words">
-                Relaxed filtering <span className="block text-xs text-zinc-500">(May allow edgier themes; no explicit content)</span>
+                Relaxed filtering <span className="block text-xs text-zinc-500">(May allow edgier themes for your custom prompts)</span>
               </span>
             </label>
           </div>
@@ -911,7 +915,7 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
             <DialogTitle>Queued — starting soon</DialogTitle>
           </DialogHeader>
         <p className="text-sm">
-            Your request is in line. Estimated start: <b>~15–30 seconds</b>. This will update automatically—no need to refresh.
+            Your request is in line. Estimated start: <b>~30 seconds</b>. This will update automatically—no need to refresh.
           </p>
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setQueuedOpen(false)}>
@@ -934,7 +938,7 @@ export default function ThemedGenerateClient({ themeKey, theme }: Props) {
           <div className="flex flex-col items-center">
             <LottiePlayer src="/lotties/generating.json" background="transparent" speed="1" style={{ width: 220, height: 220 }} loop autoplay />
             <p className="mt-2 text-sm text-zinc-600">
-              This usually takes <b>15–30 seconds</b>. For the smoothest experience, stay on Wi-Fi.
+              This usually takes <b>around 30 seconds</b>. For the smoothest experience, stay on Wi-Fi.
             </p>
           </div>
         </DialogContent>

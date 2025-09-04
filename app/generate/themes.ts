@@ -31,22 +31,21 @@ export type ThemeConfig = {
 
 export const THEMES = {
   couples: {
-    title: "Turn Your Favourite Moment Into A Wearable",
+    title: "Turn Your Favourite Photo Into High-Street Fashion",
     subtitle: "Upload a photo, choose a style, and we’ll generate it for you.",
-    dropzoneTitle: "Upload a couple photo",
+    dropzoneTitle: "Upload a your photo",
     dropzoneHelp: "PNG, JPG or WebP · clear, front-facing photos work best",
     styles: [
-      { key: "arcade_duo",             label: "Arcade Duo (P1/P2)",  token: "Turn us into an arcade character select: Player 1 & Player 2 panels, bold retro UI" },
+      { key: "arcade_duo",             label: "Arcade Duo (P1/P2)",   token: "Turn us into an arcade character select: Player 1 & Player 2 panels, bold retro UI" },
       { key: "jedi_partners",          label: "Jedi Partners",        token: "Us as Jedi partners with glowing sabers, cinematic lighting, adventure poster energy" },
-      { key: "wedding_crest",          label: "Wedding Crest",        token: "Wedding invite-style crest with our initials, elegant floral frame, classic engraving" },
-      { key: "space_high_five",        label: "Space High-Five",      token: "Us as astronauts doing a space high-five, planet rings and tiny stars behind" },
-      { key: "pixel_duo",              label: "Pixel Duo",            token: "Pixel art duo, idle animation vibes, small heart pickup between us" },
+      { key: "wedding_crest",          label: "Wedding Day",          token: "Us getting married, classic church, walking down the aisle" },
+      { key: "anime_duo",              label: "Anime Characters",     token: "Turn us into anime characters, kawaii art, big head, small body, love heart inbetween us" },
+      { key: "pixel_duo",              label: "Pokemon Duo",          token: "Turn us into Pokemon art style, holding a pokeball, idle animation vibes, small heart pickup between us" },
       { key: "polaroid_strip",         label: "Polaroid Strip",       token: "Polaroid photo booth strip of us: four mini frames, cute expressions" },
       { key: "comic_cover",            label: "Comic Book Cover",     token: "Comic book cover of us as heroes, bold title and issue number, halftone shading" },
-      { key: "cozy_cafe",              label: "Cozy Café",            token: "Cozy cafe illustration: us sharing one giant milkshake, two straws" },
-      { key: "synthwave_duo",          label: "Synthwave Silhouette", token: "Neon synthwave silhouette of us under a grid sunset, retro-futuristic palette" },
-      { key: "travel_scooter",         label: "Travel Scooter",       token: "Minimal travel poster: us on a scooter, breeze lines, city badge" },
-      { key: "band_poster",            label: "Band Poster",          token: "Band poster: our duo name in big letters, tour dates as easter eggs" },
+      { key: "cooking_showdown",       label: "Cooking Showdown",     token: "Us in aprons, split workstation, flour poofs, tasting spoons like judges" },
+      { key: "gym_spotters",           label: "Gym Bros",             token: "Us at the gym, give us big muscles and abs, tiny sweat sparkles, fun energy" },
+      { key: "pet_parents",            label: "Pet Parents",          token: "Us holding our cat or dog like a family portrait, soft studio light" },
       { key: "superhero_back_to_back", label: "Superhero Duo",        token: "Superhero partners back-to-back, dramatic lighting and lightning background" },
       { key: "other",                  label: "Choose Your Own Style", token: "" },
     ] as const,
@@ -67,7 +66,7 @@ export const THEMES = {
       {
         title: "Upload a clear couple photo",
         body: "Drop a front-facing, well-lit photo. We’ll show you a quick tip screen so you know it’s good to go.",
-        media: "/how/couples/1.webp",
+        media: "/how/couples/1.gif",
         mediaAlt: "Upload step illustration",
       },
       {
@@ -79,19 +78,20 @@ export const THEMES = {
       {
         title: "Edit & print on products",
         body: "Select your favourite, tweak it in the editor (size, placement, text), then add to tees or hoodies and checkout.",
-        media: "/how/couples/3.webp",
+        media: "/how/couples/3.gif",
         mediaAlt: "Editing/printing step",
       },
     ] as const,
   },
 
   pets: {
-    title: "Turn Your Pet Into a Fun T-Shirt",
-    subtitle: "Upload a pet photo and pick a fun style.",
+    title: "Turn Your Pet Into A Fashion Icon",
+    subtitle: "Upload a pet photo and turn it into a fun t-shirt.",
     dropzoneTitle: "Upload a pet photo",
     dropzoneHelp: "PNG, JPG or WebP · clear, front-facing photos work best",
     styles: [
       { key: "pet_jedi",      label: "Jedi Pet",       token: "Jedi pet in tiny armor, heroic pose, holding lightsaber" },
+      { key: "pet_kawaii",    label: "Kawaii Pet",     token: "Turn my pet into a kawaii anime style, cute, big head, small body, sat down, eating food with two hands" },
       { key: "pet_barista",   label: "Barista Pet",    token: "My pet as a barista pouring latte art themselves, top-down cup view" },
       { key: "pet_mugshot",   label: "Mugshot Pet",    token: "Turn my pet into a prison mugshot, striped outfit, holding a sign that says 'snack thief'" },
       { key: "pet_chef",      label: "Chef Pet",       token: "My pet as a chef tossing pizza dough, flour poofs in the air" },

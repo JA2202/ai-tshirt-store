@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useDesignStore, Color, Material, Side } from "@/lib/store";
 import Stepper from "@/components/stepper";
@@ -188,6 +189,9 @@ export default function EditPage() {
     setSize,
     setMaterial,
   } = useDesignStore();
+  const search = useSearchParams();
+  const from = search.get("from");
+  const backHref = from && from !== "default" ? `/generate/${from}` : "/generate";
 
   useEffect(() => {
     if (!chosenImage) router.replace("/generate");
@@ -1825,10 +1829,11 @@ export default function EditPage() {
                 </div>
               </div>
             )}
-
+              
             {/* Footer actions */}
+            
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
-              <Link href="/generate" className="text-sm underline">
+              <Link href={backHref} className="text-sm underline">
                 ← Back to Generate
               </Link>
               <div className="flex items-center gap-2">
