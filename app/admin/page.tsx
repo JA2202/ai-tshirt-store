@@ -1,6 +1,8 @@
 // app/admin/page.tsx
 import Stripe from "stripe";
 import { list } from "@vercel/blob";
+import { cookies } from "next/headers";          // NEW
+import { redirect } from "next/navigation";       // NEW
 
 export const dynamic = "force-dynamic"; // always SSR
 
@@ -43,6 +45,27 @@ function readNumber(o: Record<string, unknown>, k: string): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
+/* ---------- Password wall (server action) ---------- */
+async function adminLogin(formData: FormData) {
+  "use server";
+  const pass = String(formData.get("password") ?? "");
+  const required = process.env.ADMIN_PASSWORD;
+
+  // Only allow through when the env password is set and matches
+  if (required && pass === required) {
+    const store = await cookies(); // CHANGED: await cookies()
+    store.set("admin_auth", "1", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/admin",
+      maxAge: 60 * 60 * 12, // 12h
+    });
+    redirect("/admin");
+  }
+  redirect("/admin?bad=1");
+}
+
 export default async function AdminPage({
   searchParams,
 }: {
@@ -52,21 +75,61 @@ export default async function AdminPage({
   // Unwrap the promise first
   const sp = await searchParams;
 
-  // Simple gate via ?key=... (optional: if ADMIN_KEY not set, page is open)
+  // ---- Access control ------------------------------------------------------
+  const requirePass = !!process.env.ADMIN_PASSWORD; // turn wall on when set
+  const store = await cookies(); // CHANGED: await cookies()
+  const cookieOK = store.get("admin_auth")?.value === "1"; // CHANGED: use store.get
   const provided = spGet(sp, "key");
-  const allowed =
-    !process.env.ADMIN_KEY || provided === process.env.ADMIN_KEY;
+  const keyConfigured = !!process.env.ADMIN_KEY;
+  const keyOK = keyConfigured && provided === process.env.ADMIN_KEY;
+
+  // If password is required: allow when cookie OR ADMIN_KEY matches.
+  // If not required: keep previous behaviour (open unless ADMIN_KEY is set).
+  const allowed = requirePass ? (cookieOK || keyOK) : (keyConfigured ? keyOK : true);
 
   if (!allowed) {
+    const bad = spGet(sp, "bad") === "1";
     return (
-      <main className="mx-auto max-w-4xl p-6">
+      <main className="mx-auto max-w-sm p-6">
         <h1 className="text-xl font-semibold">Admin</h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          Unauthorized. Append <code>?key=YOUR_KEY</code> to the URL.
-        </p>
+        {requirePass ? (
+          <>
+            <p className="mt-2 text-sm text-zinc-600">
+              Enter the admin password to continue.
+            </p>
+            <form action={adminLogin} className="mt-4 grid gap-3">
+              <input
+                type="password"
+                name="password"
+                placeholder="Password"
+                className="rounded-lg border bg-white px-3 py-2 text-sm"
+                required
+              />
+              <button
+                type="submit"
+                className="rounded-lg bg-[#007AFF] px-4 py-2 text-sm font-medium text-white hover:bg-[#0568e8]"
+              >
+                Enter
+              </button>
+            </form>
+            {bad && (
+              <p className="mt-3 text-sm text-rose-600">Incorrect password.</p>
+            )}
+            {keyConfigured && (
+              <p className="mt-3 text-xs text-zinc-500">
+                (Admin key still supported via <code>?key=…</code>.)
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-zinc-600">
+            Unauthorized. Append <code>?key=YOUR_KEY</code> to the URL.
+          </p>
+        )}
       </main>
     );
   }
+  // -------------------------------------------------------------------------
 
   // ----- Stripe: list most recent checkout sessions -----
   let sessions:
